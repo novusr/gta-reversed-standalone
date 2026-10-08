@@ -64,12 +64,22 @@ void Interior_c::InjectHooks() {
 
 // 0x593BF0
 int32 Interior_c::Init(const CVector& pos) {
+#if defined(NOTSA_STANDALONE_NATIVE)
+    m_position = pos;
+    m_interiorInfosCount = 0;
+    return 1;
+#else
     return plugin::CallMethodAndReturn<int32, 0x593BF0>(this, &pos);
+#endif
 }
 
 // 0x592230
 void Interior_c::Exit() {
+#if defined(NOTSA_STANDALONE_NATIVE)
+    m_pGroup = nullptr;
+#else
     plugin::CallMethod<0x592230, Interior_c*>(this);
+#endif
 }
 
 // 0x593F10
@@ -210,7 +220,11 @@ FurnitureEntity_c* Interior_c::GetFurnitureEntity(CEntity* entity) {
 
 // 0x5913E0
 bool Interior_c::IsPtInside(const CVector& pt, CVector bias) {
+#if defined(NOTSA_STANDALONE_NATIVE)
+    return false;
+#else
     return plugin::CallMethodAndReturn<bool, 0x5913E0, Interior_c*, const CVector&, CVector&>(this, pt, bias);
+#endif
 }
 
 // 0x5914D0

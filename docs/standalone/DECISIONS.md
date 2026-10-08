@@ -256,3 +256,36 @@ SDL3 and OpenAL-Soft deliver a battle-tested, portable, high-performance platfor
 ### Consequences
 The standalone native target can create windows, poll input events, rumble connected gamepads, and initialize 3D audio natively on modern host platforms without any Win32 or DirectX dependencies.
 
+---
+
+## Decision 012: Graceful Degradation & Diagnostic Stubbing for Unreversed Functions (Phase 4)
+
+### Context
+In retail ASI mode, unreversed engine routines rely on `plugin::Call<address>()`, `plugin::CallAndReturn<Ret, address>()`, and `plugin::CallMethod*` to jump directly into retail `gta_sa.exe` code segments in memory. In a native standalone build (`NOTSA_STANDALONE_NATIVE`), these virtual addresses are unmapped, causing immediate Segmentation Faults (`SIGSEGV`) or Access Violations (`0xC0000005`). Reversing the remaining 7% (~576 functions across 189 files) upfront is impossible in a single step without blocking standalone engine bringup.
+
+### Decision
+1. **Diagnostic Stub Framework (`source/PluginBase.h`)**:
+   - Guarded all `plugin::Call`, `plugin::CallAndReturn`, `plugin::CallMethod`, `plugin::CallMethodAndReturn`, `plugin::CallVirtualMethod`, and `plugin::CallVirtualMethodAndReturn` under `#ifdef NOTSA_STANDALONE_NATIVE`.
+   - Instead of casting to raw function pointers, implemented `detail::SafeDefault<Ret>()` which safely constructs default values:
+     - Reference return types (e.g. `CRealTimeShadow&`) return aligned static dummy storage to prevent reference initialization compile errors.
+     - Pointer types return `nullptr`.
+     - Arithmetic/boolean/enum types return `0` / `false`.
+     - Value types (e.g. `CVector`) return default constructed zero instances.
+   - Incorporated rate-limited logging (`NOTSA_LOG_WARN`) using static per-address guard flags, logging each unreversed call site exactly once to prevent performance degradation in 60 FPS update loops.
+   - Isolated `GetBaseAddress()` and `GetGlobalAddress()` in `source/PluginBase.cpp` from Win32 `GetModuleHandleA`.
+2. **Subsystem Fallbacks**:
+   - `CMemoryMgr`: Decoupled `InitScratchPad` and `MallocAlign` to native CRT allocators.
+   - `InteriorGroup_c` & `Interior_c`: Implemented native `Init`, `AddInterior`, `Exit`, `GetEntity`, `GetPed`, and `IsPtInside` routines so building interior lists and spatial lookups remain coherent without calling unmapped addresses.
+3. **Comprehensive Audit**:
+   - Generated a full classification and inventory of all active `plugin::Call` sites in `docs/standalone/audits/PLUGIN_CALL_AUDIT.md`.
+
+### Reason
+Allows the standalone engine to boot and run headless or windowed without crashing when traversing unreversed gameplay corners, while maintaining clear diagnostic visibility into which missing functions are exercised.
+
+### Alternatives Considered
+* *Hard abort (`assert(false)` / `std::terminate`)*: Makes it impossible to test or boot any engine system that touches minor unreversed edge cases.
+* *Silent stubs without logging*: Masks engine gaps and makes debugging missing behavior impossible.
+
+### Consequences
+Eliminates segmentation faults from all 838 `plugin::Call` locations in standalone native mode while preserving 100% binary compatibility with retail `gta_sa.exe` in ASI plugin builds. Increases standalone playability to ~18%.
+

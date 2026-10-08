@@ -36,7 +36,25 @@ void InteriorGroup_c::InjectHooks() {
 
 // 0x5947E0
 void InteriorGroup_c::Init(CEntity* entity, int32 id) {
+#if defined(NOTSA_STANDALONE_NATIVE)
+    m_pEntity = entity;
+    m_groupId = static_cast<uint8>(id);
+    m_numInteriors = 0;
+    m_numPeds = 0;
+    m_isVisible = false;
+    m_lastIsVisible = false;
+    m_pathSetupComplete = 0;
+    m_updatePeds = 0;
+    m_animBlockReferenced = 0;
+    for (auto& interior : m_interiors) {
+        interior = nullptr;
+    }
+    for (auto& ped : m_peds) {
+        ped = nullptr;
+    }
+#else
     plugin::CallMethod<0x5947E0, InteriorGroup_c*, CEntity*, int32>(this, entity, id);
+#endif
 }
 
 // 0x5968E0
@@ -46,7 +64,18 @@ void InteriorGroup_c::Update() {
 
 // 0x594840
 int32 InteriorGroup_c::AddInterior(Interior_c* interior) {
+#if defined(NOTSA_STANDALONE_NATIVE)
+    if (m_numInteriors < 8) {
+        m_interiors[m_numInteriors] = interior;
+        if (interior) {
+            interior->m_pGroup = this;
+        }
+        return m_numInteriors++;
+    }
+    return -1;
+#else
     return plugin::CallMethodAndReturn<int32, 0x594840, InteriorGroup_c*, Interior_c*>(this, interior);
+#endif
 }
 
 // 0x596890
@@ -81,7 +110,19 @@ void InteriorGroup_c::Setup() {
 
 // 0x595290
 int8 InteriorGroup_c::Exit() {
+#if defined(NOTSA_STANDALONE_NATIVE)
+    for (uint8 i = 0; i < m_numInteriors; ++i) {
+        if (m_interiors[i]) {
+            m_interiors[i]->Exit();
+            m_interiors[i] = nullptr;
+        }
+    }
+    m_numInteriors = 0;
+    m_pEntity = nullptr;
+    return 1;
+#else
     return plugin::CallMethodAndReturn<int8, 0x595290, InteriorGroup_c*>(this);
+#endif
 }
 
 // 0x595250
@@ -139,12 +180,23 @@ void InteriorGroup_c::SetupOfficePeds() {
 
 // 0x594BD0
 CEntity* InteriorGroup_c::GetEntity() {
+#if defined(NOTSA_STANDALONE_NATIVE)
+    return m_pEntity;
+#else
     return plugin::CallMethodAndReturn<CEntity*, 0x594BD0, InteriorGroup_c*>(this);
+#endif
 }
 
 // 0x594B90
 CPed* InteriorGroup_c::GetPed(int32 idx) {
+#if defined(NOTSA_STANDALONE_NATIVE)
+    if (idx >= 0 && idx < m_numPeds) {
+        return m_peds[idx];
+    }
+    return nullptr;
+#else
     return plugin::CallMethodAndReturn<CPed*, 0x594B90, InteriorGroup_c*, int32>(this, idx);
+#endif
 }
 
 // 0x594A50

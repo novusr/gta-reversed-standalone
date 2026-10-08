@@ -98,9 +98,11 @@ void CMemoryMgr::SetHint(void* memory, const char* hint) {
 
 // 0x72F480
 void CMemoryMgr::InitScratchPad() {
-    return plugin::Call<0x72F480>();
-
+#if defined(NOTSA_STANDALONE) || defined(NOTSA_STANDALONE_NATIVE)
     g_Heaps[HEAP_SCRATCH].Init(PC_Scratch, sizeof(PC_Scratch), false);
+#else
+    return plugin::Call<0x72F480>();
+#endif
 }
 
 void* CMemoryMgr::MallocFromScratchPad(uint32 size) {
@@ -380,13 +382,15 @@ void* CMemoryMgr::Malloc(uint32 size) {
 }
 
 void* CMemoryMgr::MallocAlign(uint32 size, uint32 align) {
-    return plugin::CallAndReturn<void*, 0x72F4C0, uint32, uint32>(size, align);
-
+#if defined(NOTSA_STANDALONE) || defined(NOTSA_STANDALONE_NATIVE)
     void* memory = MallocAlign(size, align, 0);
 #if defined MEMORY_MGR_USE_HEAP_FLAGS
     GET_HEAP_DESC(memory)->m_Flags.NoDebugHint = true;
 #endif
     return memory;
+#else
+    return plugin::CallAndReturn<void*, 0x72F4C0, uint32, uint32>(size, align);
+#endif
 }
 
 void* CMemoryMgr::Calloc(uint32 hint, uint32 size) {

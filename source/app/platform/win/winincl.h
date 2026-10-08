@@ -38,7 +38,13 @@
 // #define NOCTLMGR -- for LPCDLGTEMPLATE at some headers of Windows SDK
 // #define NONLS -- for GetACP at common.h
 
+#if defined(_WIN32)
 #include <Windows.h>
+#elif __has_include(<Windows.h>)
+#include <Windows.h>
+#elif __has_include(<windows.h>)
+#include <windows.h>
+#endif
 
 #ifdef USE_DSOUND
     #include <mmsystem.h> // for DirectSound types
