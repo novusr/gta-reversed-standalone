@@ -5,19 +5,19 @@ This document provides the operational truth of the `gta-reversed` repository at
 ---
 
 ## Current Phase
-* **Phase**: **Phase 2 (Completed)** ──► **Phase 3 (Ready to Start)**
-* **Description**: Phase 2 (Platform Abstraction Layer: SDL3 & OpenAL) complete: SDL3 windowing & event loop bootstrapped in `WinMain.cpp`, controller/mouse/keyboard routed to `CPad` with analog deadzones and haptics, OpenAL-Soft standardized as default audio hardware backend in `AEAudioHardware` bypassing DirectSound COM interfaces.
+* **Phase**: **Phase 3 (Completed)** ──► **Phase 4 (Ready to Start)**
+* **Description**: Phase 3 (Filesystem & VFS Normalization) complete: `CFileMgr` transparently normalizes backslashes to forward slashes, implements a cached case-insensitive path resolver for POSIX/Linux/macOS filesystems, and connects `CdStreamOpen` and audio table loaders to the VFS.
 
 ---
 
 ## Overall Migration Status
-* **Status**: **Pre-Alpha / Platform Abstraction Layer (SDL3 & OpenAL) Operational**
-* **Standalone Playability**: **5%** (Windowing, event pumping, input mapping, and audio hardware layer operational).
+* **Status**: **Pre-Alpha / Virtual Filesystem (VFS) & PAL Operational**
+* **Standalone Playability**: **10%** (Asset resolution, windowing, message loop, input, and audio hardware layer operational).
 * **Codebase Coverage**: 408,000 lines of reverse-engineered C++ logic available in tree; 95% of classes implemented.
 * **Compilation Mode**:
   - ASI Mode (`gta_reversed.asi`): Functional and verified against retail `gta_sa.exe`.
   - Standalone Dump-Hooks Mode (`NOTSA_STANDALONE_DUMP_HOOKS_ONLY`): Functional for CI metadata export.
-  - Standalone Native Runtime (`NOTSA_STANDALONE_NATIVE`): Implemented and verified with SDL3 windowing/event loop & OpenAL audio backend.
+  - Standalone Native Runtime (`NOTSA_STANDALONE_NATIVE`): Implemented and verified with SDL3, OpenAL, and VFS normalization.
 
 ---
 
@@ -38,18 +38,23 @@ This document provides the operational truth of the `gta-reversed` repository at
   - Standardized audio backend to OpenAL-Soft: `CAEAudioHardware::Initialise()` opens OpenAL device/context and configures 48 channels, while bypassing DirectSound COM interfaces (`DirectSoundCreate8`, `InitDirectSoundListener`, `Query3DSoundEffects`).
   - Fixed `HeapPtrArray` raw-pointer vector in `OALBase.h` for seamless buffer and source tracking.
   - Maintained 100% Dual-Mode compatibility with the vanilla ASI plugin target.
+- [x] **Phase 3 (Filesystem & VFS Normalization)**:
+  - Implemented `CFileMgr::NormalizePath` (converting `\` to `/`, collapsing duplicate slashes, stripping `./`, trimming whitespace/quotes).
+  - Implemented thread-safe, cached case-insensitive path resolver `CFileMgr::ResolvePath` and `ClearPathCache`.
+  - Integrated `CFileMgr::OpenFile`, `OpenFileForWriting`, `OpenFileForAppending`, `ChangeDir`, `SetDir`, and `SetDirMyDocuments` with VFS resolution and POSIX directory functions.
+  - Routed archive reader `CdStreamOpen` in `CdStreamInfo.cpp` through `CFileMgr::ResolvePath`.
+  - Converted `CAEMP3TrackLoader` audio table loaders to use `CFileMgr` for VFS compliance.
+  - Unit-tested and validated against mixed-case retail directory structures.
 
 ---
 
 ## In Progress
-- [ ] **Phase 3: Filesystem & Virtual Filesystem (VFS) Layer Execution**:
-  - Path normalization (backslash to forward-slash) in `CFileMgr`.
-  - Case-insensitive file resolution for cross-platform Linux/macOS filesystems.
+- [ ] **Phase 4: Stubbing Remaining 838 `plugin::Call` Instances**:
+  - Classifying unreversed calls and adding structured warning logs (`NOTSA_LOG_WARN`) with safe default returns.
 
 ---
 
 ## Not Started
-- [ ] Phase 4: Stubbing remaining 838 `plugin::Call` instances with diagnostic warnings.
 - [ ] Phase 5: `librw` RenderWare engine integration.
 - [ ] Phase 6: Headless engine bootstrap.
 - [ ] Phase 7: Window creation and loading screen rendering.

@@ -61,11 +61,13 @@ bool CAEMP3TrackLoader::Initialise() {
 // 0x4E0970
 bool CAEMP3TrackLoader::LoadStreamPackTable(void) {
     // NOTSA: Originally Win32 file API was used.
-    auto* fp = fopen("AUDIO\\CONFIG\\STRMPAKS.DAT", "rb");
+    auto* fp = CFileMgr::OpenFile("AUDIO\\CONFIG\\STRMPAKS.DAT", "rb");
     if (!fp) {
         // Win32 API creates a file if it doesn't exists, and reads 0 bytes.
-        fp = fopen("AUDIO\\CONFIG\\STRMPAKS.DAT", "w");
-        fclose(fp);
+        fp = CFileMgr::OpenFileForWriting("AUDIO\\CONFIG\\STRMPAKS.DAT");
+        if (fp) {
+            CFileMgr::CloseFile(fp);
+        }
 
         // NOTSA: Originally (StreamPack*)CMemoryMgr::Malloc(0), return value is implementation-dependent.
         m_paStreamPacks = nullptr;
@@ -85,18 +87,20 @@ bool CAEMP3TrackLoader::LoadStreamPackTable(void) {
     // NOTE: Win32 API outputs number of bytes read, most likely checking is unnecessary.
     fread(m_paStreamPacks, sizeof(StreamPack), numPacks, fp);
 
-    fclose(fp);
+    CFileMgr::CloseFile(fp);
     return true;
 }
 
 // 0x4E09F0
 bool CAEMP3TrackLoader::LoadTrackLookupTable(void) {
     // NOTSA: Originally Win32 file API was used.
-    auto* fp = fopen("AUDIO\\CONFIG\\TRAKLKUP.DAT", "rb");
+    auto* fp = CFileMgr::OpenFile("AUDIO\\CONFIG\\TRAKLKUP.DAT", "rb");
     if (!fp) {
         // Win32 API creates a file if it doesn't exists, and reads 0 bytes.
-        fp = fopen("AUDIO\\CONFIG\\TRAKLKUP.DAT", "w");
-        fclose(fp);
+        fp = CFileMgr::OpenFileForWriting("AUDIO\\CONFIG\\TRAKLKUP.DAT");
+        if (fp) {
+            CFileMgr::CloseFile(fp);
+        }
 
         // NOTSA: Originally (tTrackLookup*)CMemoryMgr::Malloc(0), return value is implementation-dependent.
         m_paTrackLookups = nullptr;
@@ -116,7 +120,7 @@ bool CAEMP3TrackLoader::LoadTrackLookupTable(void) {
     // NOTE: Win32 API outputs number of bytes read, most likely checking is unnecessary.
     fread(m_paTrackLookups, sizeof(tTrackLookup), numPacks, fp);
 
-    fclose(fp);
+    CFileMgr::CloseFile(fp);
     return true;
 }
 

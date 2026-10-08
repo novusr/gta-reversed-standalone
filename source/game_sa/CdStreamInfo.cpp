@@ -65,7 +65,8 @@ void InjectCdStreamHooks() {
 
 // 0x4067B0
 CdStreamHandle CdStreamOpen(const char* lpFileName) {
-    NOTSA_LOG_DEBUG("CdStreamOpen: {}", lpFileName);
+    std::string resolved = CFileMgr::ResolvePath(lpFileName);
+    NOTSA_LOG_DEBUG("CdStreamOpen: {} (resolved: {})", lpFileName, resolved);
     int32 idx = 0;
     for (; idx < MAX_CD_STREAM_HANDLES; idx++) {
         if (!gStreamFileHandles[idx])
@@ -73,7 +74,7 @@ CdStreamHandle CdStreamOpen(const char* lpFileName) {
     }
     SetLastError(NO_ERROR);
     HANDLE file = CreateFileA(
-        lpFileName,
+        resolved.c_str(),
         GENERIC_READ,
         FILE_SHARE_READ,
         nullptr,
@@ -85,7 +86,7 @@ CdStreamHandle CdStreamOpen(const char* lpFileName) {
     if (file == INVALID_HANDLE_VALUE) {
         return 0;
     }
-    strncpy_s(gCdImageNames[idx], lpFileName, MAX_CD_STREAM_IMAGE_NAME_SIZE);
+    strncpy_s(gCdImageNames[idx], resolved.c_str(), MAX_CD_STREAM_IMAGE_NAME_SIZE);
     return (CdStreamHandle)(idx << CD_STREAM_HANDLE_BITS);
 }
 

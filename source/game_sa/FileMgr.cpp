@@ -2,10 +2,21 @@
 
 #include <cerrno>
 #include <cstring>
-#include <direct.h>
+#include <cctype>
+#include <unordered_map>
+#include <mutex>
+#include <vector>
+#include <filesystem>
 
+#ifdef _WIN32
+#include <direct.h>
 #include "winincl.h"
 #include <ShlObj.h>
+#else
+#include <unistd.h>
+#define _chdir chdir
+#define _getcwd getcwd
+#endif
 
 #include "FileMgr.h"
 
@@ -17,8 +28,226 @@ auto& gta_user_dir_path = StaticRef<char[256]>(0xc92368);
 
 constexpr size_t PATH_SIZE = 256;
 
+static std::mutex s_VfsMutex;
+static std::unordered_map<std::string, std::string> s_PathCache;
+static std::unordered_map<std::string, std::vector<std::string>> s_DirCache;
+
+std::string CFileMgr::NormalizePath(std::string_view path) {
+    if (path.empty()) {
+        return {};
+    }
+
+    // Trim leading/trailing whitespace and quotes
+    size_t start = 0;
+    while (start < path.size() && (path[start] == ' ' || path[start] == '\t' || path[start] == '\r' || path[start] == '\n' || path[start] == '"')) {
+        start++;
+    }
+    size_t end = path.size();
+    while (end > start && (path[end - 1] == ' ' || path[end - 1] == '\t' || path[end - 1] == '\r' || path[end - 1] == '\n' || path[end - 1] == '"')) {
+        end--;
+    }
+    if (start >= end) {
+        return {};
+    }
+
+    std::string out;
+    out.reserve(end - start);
+
+    for (size_t i = start; i < end; ++i) {
+        char c = path[i];
+        if (c == '\\') {
+            c = '/';
+        }
+        // Collapse consecutive slashes
+        if (c == '/' && !out.empty() && out.back() == '/') {
+            continue;
+        }
+        out.push_back(c);
+    }
+
+    // Strip leading "./" if it has characters after (e.g., "./data/gta.dat" -> "data/gta.dat")
+    if (out.size() >= 2 && out[0] == '.' && out[1] == '/') {
+        if (out.size() > 2) {
+            out.erase(0, 2);
+        }
+    }
+
+    // Remove redundant "/./" in path
+    size_t dotSlashPos = 0;
+    while ((dotSlashPos = out.find("/./", dotSlashPos)) != std::string::npos) {
+        out.erase(dotSlashPos, 2);
+    }
+
+    return out;
+}
+
+void CFileMgr::ClearPathCache() {
+    std::scoped_lock lock(s_VfsMutex);
+    s_PathCache.clear();
+    s_DirCache.clear();
+}
+
+std::string CFileMgr::ResolvePath(std::string_view path) {
+    if (path.empty()) {
+        return {};
+    }
+
+    std::string normalized = NormalizePath(path);
+    if (normalized.empty()) {
+        return {};
+    }
+
+    {
+        std::scoped_lock lock(s_VfsMutex);
+        auto it = s_PathCache.find(normalized);
+        if (it != s_PathCache.end()) {
+            return it->second;
+        }
+    }
+
+    std::error_code ec;
+    // Fast path: if the path already exists directly as written on disk
+    if (fs::exists(normalized, ec)) {
+        std::scoped_lock lock(s_VfsMutex);
+        s_PathCache[normalized] = normalized;
+        return normalized;
+    }
+
+    // If path does not exist directly, perform case-insensitive directory resolution
+    // Split into path segments
+    std::string current;
+    size_t idx = 0;
+
+    // Check for root prefix:
+    // 1. Unix absolute root: "/"
+    // 2. Windows drive root: "C:/"
+    if (normalized[0] == '/') {
+        current = "/";
+        idx = 1;
+    } else if (normalized.size() >= 3 && std::isalpha(static_cast<unsigned char>(normalized[0])) && normalized[1] == ':' && normalized[2] == '/') {
+        current = normalized.substr(0, 3);
+        idx = 3;
+    } else {
+        current = ".";
+    }
+
+    auto stringEqualsCaseInsensitive = [](std::string_view a, std::string_view b) {
+        if (a.size() != b.size()) return false;
+        for (size_t i = 0; i < a.size(); ++i) {
+            if (std::tolower(static_cast<unsigned char>(a[i])) !=
+                std::tolower(static_cast<unsigned char>(b[i]))) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    bool resolutionFailed = false;
+
+    while (idx < normalized.size()) {
+        size_t nextSlash = normalized.find('/', idx);
+        std::string segment;
+        if (nextSlash == std::string::npos) {
+            segment = normalized.substr(idx);
+            idx = normalized.size();
+        } else {
+            segment = normalized.substr(idx, nextSlash - idx);
+            idx = nextSlash + 1;
+        }
+
+        if (segment.empty() || segment == ".") {
+            continue;
+        }
+        if (segment == "..") {
+            if (current != "." && current != "/") {
+                current = (fs::path(current) / "..").lexically_normal().string();
+            } else {
+                current = (current == ".") ? ".." : "/";
+            }
+            continue;
+        }
+
+        if (resolutionFailed) {
+            // Already failed on a parent directory; just append remaining segments
+            if (current == "." || current.empty()) {
+                current = segment;
+            } else if (current == "/" || current.back() == '/') {
+                current += segment;
+            } else {
+                current += "/" + segment;
+            }
+            continue;
+        }
+
+        // Query directory cache or read directory entries
+        const std::vector<std::string>* dirEntries = nullptr;
+        {
+            std::scoped_lock lock(s_VfsMutex);
+            auto dirIt = s_DirCache.find(current);
+            if (dirIt != s_DirCache.end()) {
+                dirEntries = &dirIt->second;
+            } else {
+                std::vector<std::string> entries;
+                std::error_code dirEc;
+                for (const auto& entry : fs::directory_iterator(current, fs::directory_options::skip_permission_denied, dirEc)) {
+                    entries.push_back(entry.path().filename().string());
+                }
+                auto [newIt, _] = s_DirCache.emplace(current, std::move(entries));
+                dirEntries = &newIt->second;
+            }
+        }
+
+        // Search in directory entries: prioritize exact match first, then case-insensitive
+        const std::string* matched = nullptr;
+        for (const auto& entry : *dirEntries) {
+            if (entry == segment) {
+                matched = &entry;
+                break;
+            }
+            if (!matched && stringEqualsCaseInsensitive(entry, segment)) {
+                matched = &entry;
+            }
+        }
+
+        if (matched) {
+            if (current == "." || current.empty()) {
+                current = *matched;
+            } else if (current == "/" || current.back() == '/') {
+                current += *matched;
+            } else {
+                current += "/" + *matched;
+            }
+        } else {
+            // No match found in this directory
+            resolutionFailed = true;
+            if (current == "." || current.empty()) {
+                current = segment;
+            } else if (current == "/" || current.back() == '/') {
+                current += segment;
+            } else {
+                current += "/" + segment;
+            }
+        }
+    }
+
+    // Normalize output format (remove leading "./" if relative)
+    if (current.size() >= 2 && current[0] == '.' && current[1] == '/') {
+        if (current.size() > 2) {
+            current.erase(0, 2);
+        }
+    }
+
+    {
+        std::scoped_lock lock(s_VfsMutex);
+        s_PathCache[normalized] = current;
+    }
+
+    return current;
+}
+
 inline void createDirectory(const wchar_t* path)
 {
+#ifdef _WIN32
     HANDLE folderHandle = CreateFileW(
         path,
         GENERIC_READ,
@@ -32,6 +261,11 @@ inline void createDirectory(const wchar_t* path)
         CreateDirectoryW(path, nullptr);
     else
         CloseHandle(folderHandle);
+#else
+    std::string pathUtf8 = UnicodeToUTF8(path);
+    std::error_code ec;
+    fs::create_directories(pathUtf8, ec);
+#endif
 }
 
 // 0x744FB0
@@ -51,6 +285,7 @@ char* InitUserDirectories()
         const auto absolutePath = fs::absolute(fs::path(*g_MiscConfig.SaveDirectoryPath));
         wcscpy_s(gtaUserDirWide.data(), gtaUserDirWide.size(), UTF8ToUnicode(absolutePath.string()).c_str());
     } else {
+#ifdef _WIN32
         if (SHGetFolderPathW(nullptr, CSIDL_PERSONAL, nullptr, SHGFP_TYPE_CURRENT, gtaUserDirWide.data()) != S_OK) {
             strcpy_s(gta_user_dir_path, std::size("data"), "data"); // 2nd param is required or game won't be able to find files!
             return gta_user_dir_path;
@@ -63,6 +298,12 @@ char* InitUserDirectories()
         } else {
             wcscat_s(gtaUserDirWide.data(), gtaUserDirWide.size(), USERFILES);
         }
+#else
+        const char* home = getenv("HOME");
+        std::string userFiles = (home && *home) ? (std::string(home) + "/.config/gta-sa") : "./user_files";
+        std::wstring userFilesWide = UTF8ToUnicode(userFiles);
+        wcscpy_s(gtaUserDirWide.data(), gtaUserDirWide.size(), userFilesWide.c_str());
+#endif
     }
     createDirectory(gtaUserDirWide.data());
 
@@ -110,6 +351,7 @@ void CFileMgr::Initialise()
 {
     memset(ms_rootDirName, 0, DIRNAMELENGTH);
 
+#ifdef _WIN32
     if (WindowsCharset != CP_UTF8)
     {
         // MikuAuahDark: Improve the function to use wide char
@@ -130,8 +372,15 @@ void CFileMgr::Initialise()
     }
     else
         VERIFY(_getcwd(ms_rootDirName, DIRNAMELENGTH));
+#else
+    VERIFY(getcwd(ms_rootDirName, DIRNAMELENGTH));
+#endif
 
-    ms_rootDirName[strlen(ms_rootDirName)] = '\\';
+    const size_t len = strlen(ms_rootDirName);
+    if (len > 0 && ms_rootDirName[len - 1] != '/' && ms_rootDirName[len - 1] != '\\') {
+        ms_rootDirName[len] = '/';
+        ms_rootDirName[len + 1] = '\0';
+    }
 }
 
 // 0x538730
@@ -139,7 +388,7 @@ int32 CFileMgr::ChangeDir(const char *path)
 {
     memset(ms_dirName, 0, DIRNAMELENGTH);
 
-    if (*path == '\\')
+    if (*path == '\\' || *path == '/')
     {
         memcpy(ms_dirName, ms_rootDirName, strlen(ms_rootDirName));
         path++;
@@ -155,11 +404,15 @@ int32 CFileMgr::ChangeDir(const char *path)
         strcat_s(ms_dirName, path);
 
         char *lastPos = strchr(ms_dirName, 0) - 1;
-        if (*lastPos != '\\')
-            lastPos[1] = '\\';
+        if (*lastPos != '\\' && *lastPos != '/')
+            lastPos[1] = '/';
     }
 
+    std::string resolved = ResolvePath(ms_dirName);
+    strncpy_s(ms_dirName, resolved.c_str(), DIRNAMELENGTH - 1);
+
     int32 r;
+#ifdef _WIN32
     if (WindowsCharset != CP_UTF8)
     {
         std::wstring pathWide = UTF8ToUnicode(ms_dirName);
@@ -167,6 +420,9 @@ int32 CFileMgr::ChangeDir(const char *path)
     }
     else
         r = _chdir(ms_dirName);
+#else
+    r = chdir(ms_dirName);
+#endif
 
     return r;
 }
@@ -179,7 +435,7 @@ int32 CFileMgr::SetDir(const char *path)
 
     if (*path)
     {
-        const auto destSizeAfterConcat = strlen(ms_dirName) + strlen(path) + 1;
+        const auto destSizeAfterConcat = strlen(ms_dirName) + strlen(path) + 2;
         if (destSizeAfterConcat > DIRNAMELENGTH)
         {
             errno = EINVAL;
@@ -188,11 +444,15 @@ int32 CFileMgr::SetDir(const char *path)
         strcat_s(ms_dirName, destSizeAfterConcat, path);
 
         char *lastPos = strchr(ms_dirName, 0) - 1;
-        if (*lastPos != '\\')
-            lastPos[1] = '\\';
+        if (*lastPos != '\\' && *lastPos != '/')
+            lastPos[1] = '/';
     }
 
+    std::string resolved = ResolvePath(ms_dirName);
+    strncpy_s(ms_dirName, resolved.c_str(), DIRNAMELENGTH - 1);
+
     int32 r;
+#ifdef _WIN32
     if (WindowsCharset != CP_UTF8)
     {
         std::wstring pathWide = UTF8ToUnicode(ms_dirName);
@@ -200,6 +460,9 @@ int32 CFileMgr::SetDir(const char *path)
     }
     else
         r = _chdir(ms_dirName);
+#else
+    r = chdir(ms_dirName);
+#endif
 
     return r;
 }
@@ -217,6 +480,7 @@ int32 CFileMgr::SetDirMyDocuments()
     strcpy_s(ms_dirName, userDir);
 
     int32 r;
+#ifdef _WIN32
     if (WindowsCharset != CP_UTF8)
     {
         std::wstring pathWide = UTF8ToUnicode(ms_dirName);
@@ -224,6 +488,9 @@ int32 CFileMgr::SetDirMyDocuments()
     }
     else
         r = _chdir(ms_dirName);
+#else
+    r = chdir(ms_dirName);
+#endif
 
     return r;
 }
@@ -248,16 +515,23 @@ size_t CFileMgr::LoadFile(const char *path, uint8 *buf, size_t size, const char 
 FILESTREAM CFileMgr::OpenFile(const char *path, const char *mode) {
     ZoneScoped;
 
+    if (!path || !mode) {
+        return nullptr;
+    }
+
+    std::string resolved = ResolvePath(path);
     FILESTREAM fs{nullptr};
-    if (WindowsCharset == CP_UTF8) {
-        fopen_s(&fs, path, mode);
-    } else {
+#ifdef _WIN32
+    if (WindowsCharset != CP_UTF8) {
         // MikuAuahDark: Let's improve it to allow opening non-ANSI names
         // Convert to wide char
-        std::wstring pathWide = UTF8ToUnicode(path);
+        std::wstring pathWide = UTF8ToUnicode(resolved.c_str());
         std::wstring modeWide = UTF8ToUnicode(mode);
         _wfopen_s(&fs, pathWide.c_str(), modeWide.c_str());
+        return fs;
     }
+#endif
+    fs = fopen(resolved.c_str(), mode);
     return fs;
 }
 

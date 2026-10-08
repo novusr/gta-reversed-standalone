@@ -177,16 +177,21 @@ Existing SDL3 and OpenAL code in the repository will become default-enabled for 
 GTA San Andreas assets use Windows backslash separators (`DATA\GTA.DAT`, `MODELS\GTA3.IMG`) and arbitrary case variations (`gta.dat` vs `GTA.DAT`). Linux and macOS filesystems are case-sensitive and POSIX path separated.
 
 ### Decision
-Integrate a path-normalization and case-insensitive virtual filesystem layer into `CFileMgr`.
+Integrate a path-normalization and case-insensitive virtual filesystem layer into `CFileMgr`:
+1. `CFileMgr::NormalizePath`: converts backslashes (`\`) to forward slashes (`/`), collapses duplicate slashes (`//`), strips leading `./`, and trims surrounding whitespace and quotes.
+2. `CFileMgr::ResolvePath`: implements a two-level thread-safe cache (`s_PathCache` and `s_DirCache`). If a path does not exist on disk as requested, traverses directory components recursively and case-insensitively, resolving to the true casing on disk while preserving unmatched trailing filenames for file write operations.
+3. Hook `CFileMgr::OpenFile`, `OpenFileForWriting`, `OpenFileForAppending`, `ChangeDir`, and `SetDir` through `ResolvePath`.
+4. Route `CdStreamOpen` in `CdStreamInfo.cpp` and `CAEMP3TrackLoader` in `AEMP3TrackLoader.cpp` through `CFileMgr::ResolvePath`.
 
 ### Reason
-Enables pristine vanilla GTA San Andreas game directories to load on Linux and macOS without requiring asset renaming scripts.
+Enables pristine vanilla GTA San Andreas game directories to load on Linux and macOS without requiring asset renaming scripts, while maintaining zero overhead on repeated queries via O(1) hash caches.
 
 ### Alternatives Considered
 * *Requiring users to run a lowercase script on game assets*: Degrades user experience and breaks compatibility with Windows installations or mod archives.
+* *Pre-indexing entire game directory tree at startup*: High memory footprint and startup lag on slow HDDs/SD cards compared to on-demand caching.
 
 ### Consequences
-All file openings in `CFileMgr` normalize `/` and `\` and perform case-insensitive directory lookups when files are not found directly.
+All file operations across the engine normalize `/` and `\` and transparently resolve case differences on case-sensitive operating systems.
 
 ---
 

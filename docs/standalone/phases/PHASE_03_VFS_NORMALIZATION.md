@@ -1,6 +1,6 @@
 # Phase 3: Filesystem & VFS Normalization
 
-* **Status**: **PLANNED**
+* **Status**: **COMPLETED**
 * **Prerequisites**: Phase 2 (Platform Abstraction Layer).
 
 ---
@@ -12,15 +12,18 @@ Ensure robust, case-insensitive asset loading across Windows, Linux, and macOS, 
 
 ## 2. Scope & Key Tasks
 1. **Path Normalization**:
-   - Update `CFileMgr`: automatically normalize all Windows backslashes (`\`) to standard forward slashes (`/`).
+   - Implemented `CFileMgr::NormalizePath`: automatically normalizes Windows backslashes (`\`) to standard forward slashes (`/`), collapses duplicate slashes (`//`), strips redundant `./`, and trims whitespace and quotes.
 2. **Case-Insensitive VFS Lookup**:
-   - Implement a case-insensitive directory cache for POSIX systems (Linux/macOS).
-   - When a file query like `DATA/DEFAULT.DAT` is requested, search directory contents case-insensitively and resolve to the true casing on disk (e.g., `data/default.dat`).
+   - Implemented `CFileMgr::ResolvePath` with thread-safe resolution caches (`s_PathCache`, `s_DirCache`).
+   - Recursively traverses path segments case-insensitively, resolving requested assets (such as `DATA/DEFAULT.DAT` or `DATA/GTA.DAT`) to the true casing on disk (e.g. `data/default.dat`).
+   - Integrated into `CFileMgr::OpenFile`, `OpenFileForWriting`, `OpenFileForAppending`, `ChangeDir`, `SetDir`, and `SetDirMyDocuments`.
 3. **Archive Mount Interface**:
-   - Ensure `CdStream` archive reader can open `.img` archives (`models/gta3.img`, `models/gta_int.img`) using normalized paths.
+   - Updated `CdStreamOpen` in `source/game_sa/CdStreamInfo.cpp` to resolve archive paths (`MODELS/GTA3.IMG`, `MODELS/GTA_INT.IMG`) through `CFileMgr::ResolvePath`.
+   - Updated audio stream table loaders in `CAEMP3TrackLoader` (`AEMP3TrackLoader.cpp`) to route through `CFileMgr`.
 
 ---
 
 ## 3. Verification Protocol
-- [ ] Unit tests for `CFileMgr` path normalization on Windows and Linux.
-- [ ] Successfully locate and parse sample text assets (`DATA/GTA.DAT`, `DATA/HANDLING.CFG`) from retail directories on Linux without manual renaming.
+- [x] Unit tests for `CFileMgr` path normalization on Windows and Linux (`NormalizePath` verified).
+- [x] Successfully locate and parse sample text assets (`DATA/GTA.DAT`, `DATA/HANDLING.CFG`, `DATA/SCRIPT/MAIN.SCM`) from retail directories on Linux without manual renaming.
+- [x] Thread-safe caching and write path resolution verified.

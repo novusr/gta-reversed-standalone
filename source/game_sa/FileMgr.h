@@ -7,6 +7,8 @@
 #pragma once
 
 #include <cstdio>
+#include <string>
+#include <string_view>
 
 // For backward compatibility
 typedef FILE* FILESTREAM;
@@ -38,6 +40,11 @@ public:
 
     //! Increment the file's seek pointer until after the next new line (`\n`) (make sure file is open in non-binary mode!)
     static void SeekNextLine(FILESTREAM file);
+
+    // NOTSA: Virtual Filesystem (VFS) Normalization & Case-Insensitive Lookup
+    static std::string NormalizePath(std::string_view path);
+    static std::string ResolvePath(std::string_view path);
+    static void        ClearPathCache();
 
 private:
     friend void InjectHooksMain();
