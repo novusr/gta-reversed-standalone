@@ -28,13 +28,15 @@ class saRecipe(ConanFile):
         "unity_build": [True, False],
 
         # Standalone build mode
-        "standalone": [False, 'dump_hooks_only'], # There's no `True` yet, as we can't build a fully standalone version yet
+        "standalone": [False, 'dump_hooks_only', 'native', True],
+        "standalone_native": [True, False],
     }
 
     default_options = {
         "with_script_command_hooks": False,
         "use_sdl3": True,
         "standalone": False,
+        "standalone_native": False,
         "unity_build": False,
     }
     
@@ -64,8 +66,13 @@ class saRecipe(ConanFile):
         
         tc = CMakeToolchain(self) 
         tc.user_presets_path = 'ConanPresets.json'
-        tc.cache_variables["GTASA_STANDALONE_DUMP_HOOKS_ONLY"] = self.options.standalone == 'dump_hooks_only'
-        tc.cache_variables["GTASA_STANDALONE"] = str(self.options.standalone) != 'False' # This can be either `False` or `dump_hooks_only`, but `... is not False` doesn't work
+        is_native = bool(self.options.standalone_native) or self.options.standalone in ['native', True]
+        is_dump = self.options.standalone == 'dump_hooks_only'
+        is_standalone = is_native or is_dump or str(self.options.standalone) != 'False'
+
+        tc.cache_variables["GTASA_STANDALONE_NATIVE"] = is_native
+        tc.cache_variables["GTASA_STANDALONE_DUMP_HOOKS_ONLY"] = is_dump
+        tc.cache_variables["GTASA_STANDALONE"] = is_standalone
         tc.cache_variables["GTASA_WITH_SCRIPT_COMMAND_HOOKS"] = self.options.with_script_command_hooks
         tc.cache_variables["GTASA_USE_SDL3"] = self.options.use_sdl3
         tc.cache_variables["GTASA_UNITY_BUILD"] = self.options.unity_build

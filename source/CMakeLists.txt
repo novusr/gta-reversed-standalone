@@ -9,7 +9,12 @@ option(${RE_PROJECT}_WITH_OPENAL "Use OpenAL" OFF)
 option(${RE_PROJECT}_USE_SDL3 "Use SDL3" OFF)
 option(${RE_PROJECT}_STANDALONE "Build standalone executable" OFF)
 option(${RE_PROJECT}_STANDALONE_DUMP_HOOKS_ONLY "Dump hooks only" OFF)
+option(${RE_PROJECT}_STANDALONE_NATIVE "Build native standalone executable" OFF)
 
+if (${RE_PROJECT}_STANDALONE_NATIVE)
+    set(${RE_PROJECT}_STANDALONE ON)
+    add_compile_definitions(NOTSA_STANDALONE_NATIVE)
+endif()
 if (${RE_PROJECT}_USE_SDL3)
     add_compile_definitions(NOTSA_USE_SDL3)
 endif()
@@ -86,7 +91,11 @@ file(
 )
 
 if (${RE_PROJECT}_STANDALONE)
-    add_executable(${RE_PROJECT_LIB_NAME} WIN32)
+    if (WIN32)
+        add_executable(${RE_PROJECT_LIB_NAME} WIN32)
+    else()
+        add_executable(${RE_PROJECT_LIB_NAME})
+    endif()
 else()
     add_library(${RE_PROJECT_LIB_NAME} MODULE)
 endif()
@@ -110,7 +119,11 @@ target_compile_options(${RE_PROJECT_LIB_NAME} PRIVATE
 )
 
 if (${RE_PROJECT}_STANDALONE) 
-    set(TARGET_SUFFIX ".exe")
+    if (WIN32)
+        set(TARGET_SUFFIX ".exe")
+    else()
+        set(TARGET_SUFFIX "")
+    endif()
 else()
     set(TARGET_SUFFIX ".asi")
 endif()
@@ -122,7 +135,9 @@ set_target_properties(${RE_PROJECT_LIB_NAME}
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin/${CMAKE_BUILD_TYPE}/"
     COMPILE_WARNING_AS_ERROR ON
 )
-target_link_options(${RE_PROJECT_LIB_NAME} PRIVATE "/SUBSYSTEM:WINDOWS")
+if (MSVC)
+    target_link_options(${RE_PROJECT_LIB_NAME} PRIVATE "/SUBSYSTEM:WINDOWS")
+endif()
 
 #--------------------------------------------------------------------
 # Add dependencies

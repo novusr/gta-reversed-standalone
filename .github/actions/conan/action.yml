@@ -31,13 +31,14 @@ inputs:
     required: false
     default: false
   standalone:
-    description: "Standalone (exe instead of dll) build mode [Values: false, dump_hooks_only]"
+    description: "Standalone (exe instead of dll) build mode [Values: false, dump_hooks_only, native]"
     type: string
     required: false
     default: "false"
     options:
       - "false"
       - "dump_hooks_only"
+      - "native"
   build:
     description: "Whether to build the project after setting up CMake and Conan. [Values: true, false]"
     type: boolean

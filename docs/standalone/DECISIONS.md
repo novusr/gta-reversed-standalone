@@ -187,3 +187,30 @@ Enables pristine vanilla GTA San Andreas game directories to load on Linux and m
 
 ### Consequences
 All file openings in `CFileMgr` normalize `/` and `\` and perform case-insensitive directory lookups when files are not found directly.
+
+---
+
+## Decision 010: Native Storage Registry & Allocator Decoupling for `StaticRef`
+
+### Context
+`StaticRef<T>(addr)` across 2,369 declarations was coupled to fixed `gta_sa.exe` memory addresses (in ASI mode) and caused data aliasing in dummy hook-dump mode (`NOTSA_STANDALONE_DUMP_HOOKS_ONLY`). Furthermore, `MemoryMgr.cpp` hooked global operators `new`/`delete` and memory management routines directly to unmapped GTA.exe CRT addresses (`0x82119A`, `0x8214BD`, `0x72F420`).
+
+### Decision
+1. In `source/Base.h`, implement an address-keyed native storage registry (`GetOrCreateStaticStorage`) under `NOTSA_STANDALONE_NATIVE`:
+   * Allocates zero-initialized, aligned process heap storage independently for each virtual address `addr`.
+   * Enforces a minimum allocation block size (1024 bytes) to safely support overlapping base address references (such as `s_WinVer` and `s_OSStatus` sharing `0xC8CF68`).
+   * Adopts a permanent singleton pattern to prevent Static Destruction Order Fiasco during process teardown.
+   * Provides `StaticStorage<T, Addr>` and `NOTSA_GLOBAL(Type, Name, Addr)` for progressive compile-time migration.
+2. In `source/game_sa/MemoryMgr.cpp`, conditionally compile out CRT allocator hooks under `NOTSA_STANDALONE` / `NOTSA_STANDALONE_NATIVE`:
+   * Bypass hooking `operator new`, `operator new[]`, `operator delete`, and `operator delete[]` to GTA.exe addresses.
+   * Route `CMemoryMgr::Malloc`, `Free`, `Realloc`, `Calloc`, and `FreeAlign` directly to the standard host C++ runtime heap.
+
+### Reason
+Allows the entire codebase of 2,369 global references and dynamic memory allocations to compile, link, and execute safely in a native process with zero memory aliasing, zero access violations, and zero call-site refactoring overhead, while preserving 100% fidelity in vanilla ASI mode.
+
+### Alternatives Considered
+* *VirtualAlloc / mmap at fixed 0x400000*: Incompatible with ASLR, non-portable, fails on 64-bit systems.
+* *Immediate rewrite of 2,369 call sites to new symbols*: Excessive churn across 278 files, risking massive merge conflicts and breaking ASI baseline comparisons.
+
+### Consequences
+The standalone target can initialize and allocate runtime state natively across Windows and Linux platforms without needing a running `gta_sa.exe` process.

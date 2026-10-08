@@ -1,6 +1,6 @@
 # Phase 1: StaticRef & Storage Decoupling
 
-* **Status**: **IN PROGRESS**
+* **Status**: **COMPLETED**
 * **Prerequisites**: Phase 0 (Baseline Validation & Architectural Setup).
 
 ---
@@ -27,12 +27,15 @@ Introduce a compile mode `NOTSA_STANDALONE_NATIVE`:
     // Standalone native mode: Provide unique storage per address or symbol
     template<typename T, uintptr Addr>
     struct StaticStorage {
-        inline static T s_Value{};
+        alignas(alignof(T)) inline static uint8 s_Buffer[sizeof(T)]{};
+        static T& Get() {
+            return *reinterpret_cast<T*>(s_Buffer);
+        }
     };
 
     template<uintptr Addr, typename T>
     T& NativeStaticRef() {
-        return StaticStorage<T, Addr>::s_Value;
+        return StaticStorage<T, Addr>::Get();
     }
 #elif defined(NOTSA_STANDALONE_DUMP_HOOKS_ONLY)
     // CI hook dumping only
@@ -61,8 +64,8 @@ In `source/game_sa/MemoryMgr.cpp`:
 ---
 
 ## 4. Key Milestones & Verification
-- [ ] Add `GTASA_STANDALONE_NATIVE` build option in CMake and Conan.
-- [ ] Update `source/Base.h` with non-aliasing storage for standalone compilation.
-- [ ] Decouple CRT allocator hooks in `MemoryMgr.cpp`.
-- [ ] Verify that ASI target compiles with zero behavioral changes.
-- [ ] Verify that standalone target compiles a subset of core classes with native storage without crashing.
+- [x] Add `GTASA_STANDALONE_NATIVE` build option in CMake and Conan.
+- [x] Update `source/Base.h` with non-aliasing storage for standalone compilation.
+- [x] Decouple CRT allocator hooks in `MemoryMgr.cpp`.
+- [x] Verify that ASI target compiles with zero behavioral changes.
+- [x] Verify that standalone target compiles a subset of core classes with native storage without crashing.

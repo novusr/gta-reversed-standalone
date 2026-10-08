@@ -232,8 +232,11 @@ void* CMemoryMgr::Malloc(uint32 size, uint32 nHint) {
     _UNLOCK_MEMORYHEAP();
     return memory;
 #else
-    return plugin::CallAndReturn<void*, 0x72F420, size_t>(size);
+#if defined(NOTSA_STANDALONE) || defined(NOTSA_STANDALONE_NATIVE)
     return ::malloc(size);
+#else
+    return plugin::CallAndReturn<void*, 0x72F420, size_t>(size);
+#endif
 #endif
 }
 
@@ -251,8 +254,11 @@ void CMemoryMgr::Free(void* memory) {
     }
     UNLOCK_MEMORYHEAP();
 #else
+#if defined(NOTSA_STANDALONE) || defined(NOTSA_STANDALONE_NATIVE)
+    ::free(memory);
+#else
     return plugin::Call<0x72F430, void*>(memory);
-    return ::free(memory);
+#endif
 #endif
 }
 
@@ -285,19 +291,20 @@ uint8* CMemoryMgr::Realloc(void* memory, uint32 size, uint32 nHint) {
     UNLOCK_MEMORYHEAP();
     return newMemory;
 #else
-    return plugin::CallAndReturn<uint8*, 0x72F440, void*, size_t>(memory, size);
+#if defined(NOTSA_STANDALONE) || defined(NOTSA_STANDALONE_NATIVE)
     return static_cast<uint8*>(::realloc(memory, size));
+#else
+    return plugin::CallAndReturn<uint8*, 0x72F440, void*, size_t>(memory, size);
+#endif
 #endif
 }
 
 // 0x72F460
 uint8* CMemoryMgr::Calloc(uint32 numObj, uint32 sizeObj, uint32 hint) {
-    return plugin::CallAndReturn<uint8*, 0x72F460, uint32, uint32>(numObj, sizeObj);
-
-#ifdef MEMORY_MGR_USE_MEMORY_HEAP
-    return Malloc(hint * size, hint);
-#else
+#if defined(NOTSA_STANDALONE) || defined(NOTSA_STANDALONE_NATIVE)
     return static_cast<uint8*>(::calloc(numObj, sizeObj));
+#else
+    return plugin::CallAndReturn<uint8*, 0x72F460, uint32, uint32>(numObj, sizeObj);
 #endif
 }
 
@@ -311,8 +318,11 @@ uint8* CMemoryMgr::MallocAlign(uint32 size, uint32 align, uint32 nHint) {
 }
 
 void CMemoryMgr::FreeAlign(void* memory) {
-    return plugin::Call<0x72F4F0, void*>(memory);
+#if defined(NOTSA_STANDALONE) || defined(NOTSA_STANDALONE_NATIVE)
     Free(*((void**)memory - 1));
+#else
+    return plugin::Call<0x72F4F0, void*>(memory);
+#endif
 }
 
 void CMemoryMgr::SetRestrictMemoryMove(bool restrict) {
@@ -438,7 +448,7 @@ void operator delete(void* memory) {
 
 #endif
 
-#ifndef NOTSA_STANDALONE
+#if !defined(NOTSA_STANDALONE) && !defined(NOTSA_STANDALONE_NATIVE)
 void* operator new(size_t size) {
     return plugin::CallAndReturn<void*, 0x82119A, size_t>(size);
 }

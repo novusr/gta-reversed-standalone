@@ -19,6 +19,12 @@ namespace rngv = std::views;
 #include <filesystem>
 namespace fs = std::filesystem;
 
+#include <mutex>
+#include <unordered_map>
+#include <cstring>
+#include <cstdlib>
+#include <algorithm>
+
 #define PLUGIN_API
 
 #define VALIDATE_SIZE(struc, size) static_assert(sizeof(struc) == size, "Invalid structure size of " #struc)
@@ -154,6 +160,80 @@ template<typename... Ts>
 
 #define NOTSA_FORCEINLINE __forceinline
 
+namespace notsa {
+
+#if defined(NOTSA_STANDALONE_NATIVE)
+namespace detail {
+
+struct StorageEntry {
+    void*  ptr{nullptr};
+    size_t size{0};
+};
+
+struct StorageRegistry {
+    std::mutex mtx;
+    std::unordered_map<uintptr, StorageEntry> entries;
+};
+
+inline void* GetOrCreateStaticStorage(uintptr addr, size_t size, size_t alignment) {
+    // Permanent singleton to avoid destruction-order issues upon process exit
+    static StorageRegistry& s_registry = *new StorageRegistry();
+
+    std::lock_guard<std::mutex> lock(s_registry.mtx);
+    auto it = s_registry.entries.find(addr);
+    if (it != s_registry.entries.end()) {
+        return it->second.ptr;
+    }
+
+    if (alignment < alignof(void*)) {
+        alignment = alignof(void*);
+    }
+    size_t minSize = (std::max)(size, static_cast<size_t>(1024));
+    size_t allocSize = (minSize + alignment - 1) & ~(alignment - 1);
+
+    void* mem = nullptr;
+#if defined(_WIN32)
+    mem = _aligned_malloc(allocSize, alignment);
+#else
+    if (posix_memalign(&mem, alignment, allocSize) != 0) {
+        mem = nullptr;
+    }
+#endif
+    if (mem) {
+        std::memset(mem, 0, allocSize);
+    }
+
+    s_registry.entries[addr] = StorageEntry{ mem, allocSize };
+    return mem;
+}
+
+} // namespace detail
+
+// Standalone native mode: Provide unique compile-time storage per address or symbol
+template<typename T, uintptr Addr>
+struct StaticStorage {
+    alignas(alignof(T)) inline static uint8 s_Buffer[sizeof(T)]{};
+    static T& Get() {
+        return *reinterpret_cast<T*>(s_Buffer);
+    }
+};
+
+template<uintptr Addr, typename T>
+T& NativeStaticRef() {
+    return StaticStorage<T, Addr>::Get();
+}
+#endif
+
+} // namespace notsa
+
+#if defined(NOTSA_STANDALONE_NATIVE)
+    #define NOTSA_GLOBAL(Type, Name, Addr) static inline auto& Name = StaticRef<Type>(Addr)
+#elif defined(NOTSA_STANDALONE_DUMP_HOOKS_ONLY)
+    #define NOTSA_GLOBAL(Type, Name, Addr) static inline auto& Name = StaticRef<Type>(Addr)
+#else
+    #define NOTSA_GLOBAL(Type, Name, Addr) static inline auto& Name = StaticRef<Type>(Addr)
+#endif
+
 /*!
 * @brief Used for static variable references
 *
@@ -162,7 +242,10 @@ template<typename... Ts>
 */
 template<typename T>
 T& StaticRef(uintptr addr) {
-#ifdef NOTSA_STANDALONE_DUMP_HOOKS_ONLY
+#if defined(NOTSA_STANDALONE_NATIVE)
+    void* ptr = notsa::detail::GetOrCreateStaticStorage(addr, sizeof(T), alignof(T));
+    return *reinterpret_cast<T*>(ptr);
+#elif defined(NOTSA_STANDALONE_DUMP_HOOKS_ONLY)
     // NOTE/BUG:
     // In NOTSA_STANDALONE_DUMP_HOOKS_ONLY, StaticRef() returns a single per-type static buffer for all addresses.
     // That aliases unrelated globals of the same type (e.g., many StaticRef<int32>(...)), so writes intended for one address will overwrite the dummy storage for another.
