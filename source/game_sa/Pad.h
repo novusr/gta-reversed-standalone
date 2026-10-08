@@ -131,6 +131,7 @@ public:
     bool ProcessJoyStickEvent(const SDL_Event& e, CControllerState& cs);
 
     static bool ProcessEvent(const SDL_Event& e, bool ignoreMouseEvents, bool ignoreKeyboardEvents);
+    static void UpdateGamepadVibration();
 #endif
 
     void Clear(bool enablePlayerControls, bool resetPhase);

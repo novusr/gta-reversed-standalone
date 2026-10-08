@@ -58,9 +58,11 @@ public:
 
     void   SetPosition(const CVector& vecPos) const;
     float  GetVolume() const { return m_Volume; };
-    void   SetVolume(float volume);
+#ifdef USE_DSOUND
     bool   IsBufferPlaying() const { return m_nBufferStatus & DSBSTATUS_PLAYING; };
-    uint32 GetCurrentPlaybackPosition() const;
+#else
+    bool   IsBufferPlaying() const { return false; };
+#endif
     uint32 ConvertFromBytesToMS(uint32 bytes) const;
     uint32 ConvertFromMsToBytes(uint32 ms) const;
     void   SetFrequency(uint32 freq);

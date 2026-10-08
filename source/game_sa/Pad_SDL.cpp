@@ -134,37 +134,108 @@ bool CPad::ProcessKeyboardEvent(const SDL_Event& e, CKeyboardState& ks) {
     return false;
 }
 
-bool CPad::ProcessGamepadEvent(const SDL_Event & e, CControllerState& cs) {
-    //switch (e.type) {
-    //case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
-    //    const auto UpdateAxis = [&](int16& outA, int16& outB, bool isInverted, bool isSwapped) {
-    //        int16 pos = e.gaxis.value;
-    //        if (fabs(pos) > 0.3f) {
-    //            pos = isInverted ? -pos : pos;
-    //            pos /= 128; // SDL values are [-32768 to 32767], need to map to [-128, 127] (Actually should be [-128, 128] (?))
-    //            (isSwapped ? outA : outB) = pos;
-    //        }
-    //    };
-    //    switch (e.gaxis.axis) {
-    //    case SDL_GAMEPAD_AXIS_LEFTX:
-    //    case SDL_GAMEPAD_AXIS_LEFTY:
-    //    case SDL_GAMEPAD_AXIS_RIGHTX:
-    //    case SDL_GAMEPAD_AXIS_RIGHTY:
-    //    }
-    //        
-    //    UpdateAxis(cs.LeftStickY, cs.LeftStickX, FrontEndMenuManager.m_bInvertPadX1, FrontEndMenuManager.m_bSwapPadAxis1);
-    //    UpdateAxis(cs.LeftStickX, cs.LeftStickY, FrontEndMenuManager.m_bInvertPadY1, FrontEndMenuManager.m_bSwapPadAxis2);
-    //
-    //    UpdateAxis(cs.LeftStickY, cs.LeftStickX, FrontEndMenuManager.m_bInvertPadX2, FrontEndMenuManager.m_bSwapPadAxis1);
-    //    UpdateAxis(cs.LeftStickX, cs.LeftStickY, FrontEndMenuManager.m_bInvertPadY2, FrontEndMenuManager.m_bSwapPadAxis2);
-    //    return true;
-    //}
-    //}
+static SDL_Gamepad* s_Gamepads[2]{ nullptr, nullptr };
+static SDL_JoystickID s_GamepadIDs[2]{ 0, 0 };
+
+static int GetPadIndexForGamepadID(SDL_JoystickID id) {
+    if (s_GamepadIDs[0] == id) return 0;
+    if (s_GamepadIDs[1] == id) return 1;
+    if (s_GamepadIDs[0] == 0) { s_GamepadIDs[0] = id; return 0; }
+    if (s_GamepadIDs[1] == 0) { s_GamepadIDs[1] = id; return 1; }
+    return 0;
+}
+
+bool CPad::ProcessGamepadEvent(const SDL_Event& e, CControllerState& cs) {
+    switch (e.type) {
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    case SDL_EVENT_GAMEPAD_BUTTON_UP: {
+        const int16 state = (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) ? 255 : 0;
+        switch (e.gbutton.button) {
+        case SDL_GAMEPAD_BUTTON_SOUTH:          cs.ButtonCross = state; break;
+        case SDL_GAMEPAD_BUTTON_EAST:           cs.ButtonCircle = state; break;
+        case SDL_GAMEPAD_BUTTON_WEST:           cs.ButtonSquare = state; break;
+        case SDL_GAMEPAD_BUTTON_NORTH:          cs.ButtonTriangle = state; break;
+        case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:  cs.LeftShoulder1 = state; break;
+        case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: cs.RightShoulder1 = state; break;
+        case SDL_GAMEPAD_BUTTON_START:          cs.Start = state; break;
+        case SDL_GAMEPAD_BUTTON_BACK:           cs.Select = state; break;
+        case SDL_GAMEPAD_BUTTON_LEFT_STICK:     cs.ShockButtonL = state; break;
+        case SDL_GAMEPAD_BUTTON_RIGHT_STICK:    cs.ShockButtonR = state; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_UP:        cs.DPadUp = state; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN:      cs.DPadDown = state; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_LEFT:      cs.DPadLeft = state; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:     cs.DPadRight = state; break;
+        default: return false;
+        }
+        return true;
+    }
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
+        constexpr int16 DEADZONE = 6500; // ~20% analog deadzone
+        const auto ApplyDeadzone = [DEADZONE](int16 value) -> int16 {
+            if (std::abs(value) <= DEADZONE) {
+                return 0;
+            }
+            float normalized = (float)value / 32767.0f;
+            return static_cast<int16>(std::clamp(normalized * 128.0f, -128.0f, 127.0f));
+        };
+
+        switch (e.gaxis.axis) {
+        case SDL_GAMEPAD_AXIS_LEFTX: {
+            int16 val = ApplyDeadzone(e.gaxis.value);
+            if (FrontEndMenuManager.m_bInvertPadX1) val = -val;
+            (FrontEndMenuManager.m_bSwapPadAxis1 ? cs.LeftStickY : cs.LeftStickX) = val;
+            return true;
+        }
+        case SDL_GAMEPAD_AXIS_LEFTY: {
+            int16 val = ApplyDeadzone(e.gaxis.value);
+            if (FrontEndMenuManager.m_bInvertPadY1) val = -val;
+            (FrontEndMenuManager.m_bSwapPadAxis1 ? cs.LeftStickX : cs.LeftStickY) = val;
+            return true;
+        }
+        case SDL_GAMEPAD_AXIS_RIGHTX: {
+            int16 val = ApplyDeadzone(e.gaxis.value);
+            if (FrontEndMenuManager.m_bInvertPadX2) val = -val;
+            (FrontEndMenuManager.m_bSwapPadAxis2 ? cs.RightStickY : cs.RightStickX) = val;
+            return true;
+        }
+        case SDL_GAMEPAD_AXIS_RIGHTY: {
+            int16 val = ApplyDeadzone(e.gaxis.value);
+            if (FrontEndMenuManager.m_bInvertPadY2) val = -val;
+            (FrontEndMenuManager.m_bSwapPadAxis2 ? cs.RightStickX : cs.RightStickY) = val;
+            return true;
+        }
+        case SDL_GAMEPAD_AXIS_LEFT_TRIGGER: {
+            cs.LeftShoulder2 = static_cast<int16>((std::max<int16>(0, e.gaxis.value) / 32767.0f) * 255.0f);
+            return true;
+        }
+        case SDL_GAMEPAD_AXIS_RIGHT_TRIGGER: {
+            cs.RightShoulder2 = static_cast<int16>((std::max<int16>(0, e.gaxis.value) / 32767.0f) * 255.0f);
+            return true;
+        }
+        default: return false;
+        }
+    }
+    }
     return false;
 }
 
 bool CPad::ProcessJoyStickEvent(const SDL_Event& e, CControllerState& cs) {
     return false;
+}
+
+void CPad::UpdateGamepadVibration() {
+    for (size_t i = 0; i < std::size(Pads); i++) {
+        if (i >= 2 || !s_Gamepads[i]) {
+            continue;
+        }
+        auto* pad = GetPad((int32)i);
+        if (FrontEndMenuManager.m_PrefsUseVibration && pad->ShakeDur > 0 && pad->ShakeFreq > 0) {
+            Uint16 intensity = static_cast<Uint16>(std::min(65535, (int)pad->ShakeFreq * 257));
+            SDL_RumbleGamepad(s_Gamepads[i], intensity, intensity, static_cast<Uint32>(pad->ShakeDur));
+        } else {
+            SDL_RumbleGamepad(s_Gamepads[i], 0, 0, 0);
+        }
+    }
 }
 
 bool CPad::ProcessEvent(const SDL_Event& e, bool ignoreMouseEvents, bool ignoreKeyboardEvents) {
@@ -176,7 +247,44 @@ bool CPad::ProcessEvent(const SDL_Event& e, bool ignoreMouseEvents, bool ignoreK
         return true;
     }
 
-    // Other events (I guess) can be handled by any pad
+    if (e.type == SDL_EVENT_GAMEPAD_ADDED) {
+        const auto id = e.gdevice.which;
+        for (int i = 0; i < 2; ++i) {
+            if (!s_Gamepads[i]) {
+                s_Gamepads[i] = SDL_OpenGamepad(id);
+                s_GamepadIDs[i] = id;
+                NOTSA_LOG_INFO("SDL: Gamepad connected for Pad {}: {}", i, SDL_GetGamepadName(s_Gamepads[i]));
+                break;
+            }
+        }
+        return true;
+    }
+
+    if (e.type == SDL_EVENT_GAMEPAD_REMOVED) {
+        const auto id = e.gdevice.which;
+        for (int i = 0; i < 2; ++i) {
+            if (s_GamepadIDs[i] == id) {
+                if (s_Gamepads[i]) {
+                    SDL_CloseGamepad(s_Gamepads[i]);
+                    s_Gamepads[i] = nullptr;
+                }
+                s_GamepadIDs[i] = 0;
+                NOTSA_LOG_INFO("SDL: Gamepad disconnected for Pad {}", i);
+                break;
+            }
+        }
+        return true;
+    }
+
+    if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_GAMEPAD_BUTTON_UP || e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION) {
+        SDL_JoystickID id = (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION) ? e.gaxis.which : e.gbutton.which;
+        int padIdx = GetPadIndexForGamepadID(id);
+        if (padIdx >= 0 && padIdx < 2) {
+            return GetPad(padIdx)->ProcessGamepadEvent(e, GetPad(padIdx)->PCTempJoyState);
+        }
+    }
+
+    // Other events can be handled by any pad
     for (auto& pad : Pads) {
         if (pad.ProcessJoyStickEvent(e, pad.PCTempJoyState)) {
             return true;

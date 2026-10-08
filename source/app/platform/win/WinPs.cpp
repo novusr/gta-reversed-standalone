@@ -55,6 +55,9 @@ static BOOL CheckDirectX() {
 
 //! 0x745840 - Check if DirectSound can be loaded
 static BOOL CheckDirectSound() {
+#if defined(USE_OPENAL) || defined(NOTSA_WITH_OPENAL)
+    return TRUE;
+#else
     LPDIRECTSOUND ds;
 
     if (FAILED(DirectSoundCreate(NULL, &ds, NULL))) {
@@ -67,6 +70,7 @@ static BOOL CheckDirectSound() {
     ds->Release();
 
     return SUCCEEDED(hr);
+#endif
 }
 
 // 0x7465B0
@@ -213,6 +217,12 @@ void psTerminate() {
 
 // 0x7451B0
 void psWindowSetText(const char* str) {
+#ifdef NOTSA_USE_SDL3
+    if (PSGLOBAL(sdlWindow)) {
+        SDL_SetWindowTitle(PSGLOBAL(sdlWindow), str);
+        return;
+    }
+#endif
     SetWindowTextA(PSGLOBAL(window), str);
 }
 
@@ -323,11 +333,26 @@ RwImage* psGrabScreen(RwCamera* camera) {
 
 // 0x7453E0
 void psMouseSetVisibility(bool visible) {
+#ifdef NOTSA_USE_SDL3
+    if (visible) {
+        SDL_ShowCursor();
+    } else {
+        SDL_HideCursor();
+    }
+#else
     ::ShowCursor(visible);
+#endif
 }
 
 // 0x7453F0
 void psMouseSetPos(RwV2d* pos) {
+#ifdef NOTSA_USE_SDL3
+    if (PSGLOBAL(sdlWindow)) {
+        SDL_WarpMouseInWindow(PSGLOBAL(sdlWindow), pos->x, pos->y);
+        PSGLOBAL(lastMousePos) = *pos;
+        return;
+    }
+#endif
     POINT point = { .x = LONG(pos->x), .y = LONG(pos->y) };
     ::ClientToScreen(PSGLOBAL(window), &point);
     ::SetCursorPos(point.x, point.y);

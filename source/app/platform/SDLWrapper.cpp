@@ -37,11 +37,21 @@ void ProcessEvents() {
         }
 
         switch (e.type) {
-        case SDL_EVENT_QUIT: {
+        case SDL_EVENT_QUIT:
+        case SDL_EVENT_WINDOW_CLOSE_REQUESTED: {
             RsGlobal.quit = true;
             continue;
         }
-        case SDL_EVENT_WINDOW_RESIZED: {
+        case SDL_EVENT_WINDOW_FOCUS_GAINED: {
+            ForegroundApp = true;
+            continue;
+        }
+        case SDL_EVENT_WINDOW_FOCUS_LOST: {
+            ForegroundApp = false;
+            continue;
+        }
+        case SDL_EVENT_WINDOW_RESIZED:
+        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
             const auto w = e.window.data1,
                        h = e.window.data2;
 
@@ -49,6 +59,11 @@ void ProcessEvents() {
                 "SDL: Window resized: {} x {}",
                 w, h
             );
+
+            RsGlobal.maximumWidth = w;
+            RsGlobal.maximumHeight = h;
+            RwRect rect{ 0, 0, (RwInt32)w, (RwInt32)h };
+            RsEventHandler(rsCAMERASIZE, &rect);
 
             continue;
         }

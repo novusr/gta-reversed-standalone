@@ -1,7 +1,15 @@
 #pragma once
 
-template<typename T, typename Deleter = std::default_delete<T>, typename Alloc = std::allocator<T>>
-using HeapPtrArray = std::vector<std::unique_ptr<T, Deleter>, Alloc>;
+#if defined(__APPLE__)
+#include <OpenAL/al.h>
+#include <OpenAL/alc.h>
+#else
+#include <AL/al.h>
+#include <AL/alc.h>
+#endif
+
+template<typename T>
+using HeapPtrArray = std::vector<T*>;
 
 // This class has to be heap allocated! (with `new`)
 class OALBase {

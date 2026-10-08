@@ -23,6 +23,9 @@ class saRecipe(ConanFile):
 
         # Use SDL3 or DInput
         "use_sdl3": [True, False],
+
+        # Use OpenAL or DirectSound
+        "with_openal": [True, False],
   
         # Use Unity build mode
         "unity_build": [True, False],
@@ -35,14 +38,22 @@ class saRecipe(ConanFile):
     default_options = {
         "with_script_command_hooks": False,
         "use_sdl3": True,
+        "with_openal": False,
         "standalone": False,
         "standalone_native": False,
         "unity_build": False,
     }
+
+    def configure(self):
+        is_native = bool(self.options.standalone_native) or self.options.standalone in ['native', True]
+        if is_native:
+            self.options.use_sdl3 = True
+            self.options.with_openal = True
     
     def requirements(self):
         # Required for our custom stuff, and optionally in vanilla with SDL3
-        if self.options.use_sdl3:
+        is_native = bool(self.options.standalone_native) or self.options.standalone in ['native', True]
+        if self.options.use_sdl3 or is_native:
             self.requires("sdl/3.4.14")
 
         # Required for our custom stuff
@@ -69,12 +80,15 @@ class saRecipe(ConanFile):
         is_native = bool(self.options.standalone_native) or self.options.standalone in ['native', True]
         is_dump = self.options.standalone == 'dump_hooks_only'
         is_standalone = is_native or is_dump or str(self.options.standalone) != 'False'
+        use_sdl3 = bool(self.options.use_sdl3) or is_native
+        with_openal = bool(self.options.with_openal) or is_native
 
         tc.cache_variables["GTASA_STANDALONE_NATIVE"] = is_native
         tc.cache_variables["GTASA_STANDALONE_DUMP_HOOKS_ONLY"] = is_dump
         tc.cache_variables["GTASA_STANDALONE"] = is_standalone
         tc.cache_variables["GTASA_WITH_SCRIPT_COMMAND_HOOKS"] = self.options.with_script_command_hooks
-        tc.cache_variables["GTASA_USE_SDL3"] = self.options.use_sdl3
+        tc.cache_variables["GTASA_USE_SDL3"] = use_sdl3
+        tc.cache_variables["GTASA_WITH_OPENAL"] = with_openal
         tc.cache_variables["GTASA_UNITY_BUILD"] = self.options.unity_build
         tc.generate()
 

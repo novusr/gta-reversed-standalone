@@ -5,19 +5,19 @@ This document provides the operational truth of the `gta-reversed` repository at
 ---
 
 ## Current Phase
-* **Phase**: **Phase 1 (Completed)** ──► **Phase 2 (Ready to Start)**
-* **Description**: Phase 1 (`StaticRef` & Storage Decoupling) complete: non-aliasing native static storage implemented in `Base.h`, CRT allocators detached in `MemoryMgr.cpp`, build options added to CMake and Conan.
+* **Phase**: **Phase 2 (Completed)** ──► **Phase 3 (Ready to Start)**
+* **Description**: Phase 2 (Platform Abstraction Layer: SDL3 & OpenAL) complete: SDL3 windowing & event loop bootstrapped in `WinMain.cpp`, controller/mouse/keyboard routed to `CPad` with analog deadzones and haptics, OpenAL-Soft standardized as default audio hardware backend in `AEAudioHardware` bypassing DirectSound COM interfaces.
 
 ---
 
 ## Overall Migration Status
-* **Status**: **Pre-Alpha / Storage Decoupled & Native Foundation Ready**
-* **Standalone Playability**: **0%** (Cannot execute game simulation yet).
+* **Status**: **Pre-Alpha / Platform Abstraction Layer (SDL3 & OpenAL) Operational**
+* **Standalone Playability**: **5%** (Windowing, event pumping, input mapping, and audio hardware layer operational).
 * **Codebase Coverage**: 408,000 lines of reverse-engineered C++ logic available in tree; 95% of classes implemented.
 * **Compilation Mode**:
   - ASI Mode (`gta_reversed.asi`): Functional and verified against retail `gta_sa.exe`.
   - Standalone Dump-Hooks Mode (`NOTSA_STANDALONE_DUMP_HOOKS_ONLY`): Functional for CI metadata export.
-  - Standalone Native Runtime (`NOTSA_STANDALONE_NATIVE`): Implemented and verified in `source/Base.h` & `source/CMakeLists.txt`.
+  - Standalone Native Runtime (`NOTSA_STANDALONE_NATIVE`): Implemented and verified with SDL3 windowing/event loop & OpenAL audio backend.
 
 ---
 
@@ -26,25 +26,29 @@ This document provides the operational truth of the `gta-reversed` repository at
 - [x] Architectural strategy evaluation (Decided: Evolutionary In-Place Migration, rejecting ECS and scratch engine).
 - [x] Establishment of autonomous project memory in `docs/standalone/` (`ARCHITECTURE.md`, `ROADMAP.md`, `DECISIONS.md`, `CONSTRAINTS.md`, `BLOCKERS.md`, `CURRENT_STATE.md`, `TESTING.md`, and phase documents).
 - [x] Standalone build flags mapped in `conanfile.py` and `source/CMakeLists.txt` (`GTASA_STANDALONE`, `GTASA_STANDALONE_DUMP_HOOKS_ONLY`, `GTASA_STANDALONE_NATIVE`).
-- [x] Audio backend: OpenAL-Soft abstraction already in tree (`source/game_sa/Audio/OpenAL/`).
-- [x] Input backend: SDL3 bindings already present in tree (`source/app/platform/`).
 - [x] **Phase 1 (`StaticRef` & Storage Decoupling)**:
   - Non-aliasing native memory storage for `StaticRef` under `NOTSA_STANDALONE_NATIVE` in `source/Base.h`.
   - Added `GTASA_STANDALONE_NATIVE` option to CMake, Conan, and CI action.
   - Allocator CRT hooks detached in `source/game_sa/MemoryMgr.cpp` (bypassing `0x82119A` and `0x8214BD`).
   - Added `NOTSA_GLOBAL` macro and `notsa::NativeStaticRef` compile-time template storage.
+- [x] **Phase 2 (Platform Abstraction Layer: SDL3 & OpenAL)**:
+  - Auto-enabled `GTASA_USE_SDL3=ON` and `GTASA_WITH_OPENAL=ON` when `GTASA_STANDALONE_NATIVE=ON` in CMake and Conan.
+  - Bootstrapped native standalone entry point and frame pump in `source/app/platform/win/WinMain.cpp` using `SDL_Init`, `SDL_CreateWindow`, `SDL_PollEvent`, and RAII ScopeGuards.
+  - Connected SDL3 events to `CPad`: gamepad buttons, analog axis deadzones (~20%), inverted/swapped axis prefs, analog triggers (0-255), hotplugging, and rumble via `SDL_RumbleGamepad`.
+  - Standardized audio backend to OpenAL-Soft: `CAEAudioHardware::Initialise()` opens OpenAL device/context and configures 48 channels, while bypassing DirectSound COM interfaces (`DirectSoundCreate8`, `InitDirectSoundListener`, `Query3DSoundEffects`).
+  - Fixed `HeapPtrArray` raw-pointer vector in `OALBase.h` for seamless buffer and source tracking.
+  - Maintained 100% Dual-Mode compatibility with the vanilla ASI plugin target.
 
 ---
 
 ## In Progress
-- [ ] **Phase 2: Platform Abstraction Layer (PAL) Execution**:
-  - Refactoring Win32 message loop into SDL3 event pumping (`source/app/platform/win/WinMain.cpp`).
-  - DirectInput8 to SDL3 input event migration (`CPad`).
+- [ ] **Phase 3: Filesystem & Virtual Filesystem (VFS) Layer Execution**:
+  - Path normalization (backslash to forward-slash) in `CFileMgr`.
+  - Case-insensitive file resolution for cross-platform Linux/macOS filesystems.
 
 ---
 
 ## Not Started
-- [ ] Phase 3: Filesystem & VFS path normalization / case-insensitivity.
 - [ ] Phase 4: Stubbing remaining 838 `plugin::Call` instances with diagnostic warnings.
 - [ ] Phase 5: `librw` RenderWare engine integration.
 - [ ] Phase 6: Headless engine bootstrap.
@@ -56,7 +60,7 @@ This document provides the operational truth of the `gta-reversed` repository at
 ## Known Problems
 1. **`StaticRef` Memory Faults**: Resolved for standalone native mode via thread-safe, non-aliasing native storage registry in `source/Base.h`.
 2. **Dump-Hooks Storage Aliasing**: Addressed in `NOTSA_STANDALONE_NATIVE`; legacy single-buffer behavior retained only in `NOTSA_STANDALONE_DUMP_HOOKS_ONLY` for CI compatibility.
-3. **No Standalone Game Entry Point**: `source/app/platform/win/WinMain.cpp:557` logs an error and exits with code 1 if run without `dump_hooks_only`.
+3. **No Standalone Game Entry Point**: Resolved in Phase 2 via SDL3 bootstrap and event pump in `WinMain.cpp`.
 4. **1,377 Dead RenderWare Thunks**: Every RenderWare API thunk in `source/game_sa/RenderWare/rw/*.cpp` calls raw GTA.exe addresses.
 5. **838 Unreversed Calls**: `plugin::Call<addr>()` crashes in standalone mode if invoked.
 6. **Allocator Hooking**: Resolved for standalone mode; bypasses `0x82119A` and `0x8214BD` CRT hooks and routes to standard compiler/OS runtime heap.

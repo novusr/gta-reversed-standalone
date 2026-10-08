@@ -233,6 +233,10 @@ void CPad::UpdatePads() {
         GetPad(PAD2)->Update(PAD2);
     }
 
+#ifdef NOTSA_USE_SDL3
+    UpdateGamepadVibration();
+#endif
+
     OldKeyState = std::exchange(NewKeyState, TempKeyState);
 }
 
@@ -543,6 +547,10 @@ void CPad::StartShake(int16 time, uint8 freq, uint32 shakeDelayMs) {
         ShakeDur = 0;
         ShakeFreq = 0;
     }
+
+#ifdef NOTSA_USE_SDL3
+    UpdateGamepadVibration();
+#endif
 }
 
 // originally 3x float instead of CVector
@@ -590,7 +598,11 @@ void CPad::StopPadsShaking() {
 
 // 0x53FB50
 void CPad::StopShaking(int16 arg0) {
-    // NOP
+#ifdef NOTSA_USE_SDL3
+    ShakeDur = 0;
+    ShakeFreq = 0;
+    UpdateGamepadVibration();
+#endif
 }
 
 // 0x53FC50

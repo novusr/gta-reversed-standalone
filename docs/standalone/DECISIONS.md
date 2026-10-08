@@ -214,3 +214,40 @@ Allows the entire codebase of 2,369 global references and dynamic memory allocat
 
 ### Consequences
 The standalone target can initialize and allocate runtime state natively across Windows and Linux platforms without needing a running `gta_sa.exe` process.
+
+---
+
+## Decision 011: Standalone Native Platform Abstraction Layer (SDL3 & OpenAL-Soft)
+
+### Context
+In vanilla GTA San Andreas, the application entry point, window management, message loop, input, and audio were coupled to legacy Win32 APIs (`HWND`, `WndProc`, `PeekMessage`), DirectInput 8 (`IDirectInput8`, `IDirectInputDevice8`), and DirectSound 8 (`IDirectSound8`, `IDirectSoundBuffer`, `DirectSoundCreate8`). The standalone executable had no native main loop and terminated immediately at `source/app/platform/win/WinMain.cpp:563` with an error message.
+
+### Decision
+1. **Build Configuration**:
+   - In `source/CMakeLists.txt` and `conanfile.py`, auto-enable `GTASA_USE_SDL3=ON` and `GTASA_WITH_OPENAL=ON` whenever `GTASA_STANDALONE_NATIVE=ON`.
+   - Link `OpenAL::OpenAL` / `openal` and decouple `dsound` and `DIRECTINPUT_VERSION` from the native standalone target.
+2. **Windowing & Application Lifecycle**:
+   - Replaced the `WinMain.cpp` standalone stub with full SDL3 initialization (`SDL_Init`), platform init (`RsEventHandler(rsINITIALIZE)`), window creation (`SDL_CreateWindow`), audio init (`AudioEngine.Initialise()`), and UI renderer instances with RAII `ScopeGuard` cleanup.
+   - Implemented the primary standalone native main loop using `SDL_PollEvent` via `notsa::SDLWrapper::ProcessEvents()` handling quit, window close, focus changes, resize (`rsCAMERASIZE`), and input.
+   - Guarded Win32 platform functions (`psWindowSetText`, `psMouseSetVisibility`, `psMouseSetPos`) in `WinPs.cpp` to use SDL3 window APIs when `NOTSA_USE_SDL3` is active.
+3. **Input Layer (`CPad`)**:
+   - Extended `CPad::ProcessGamepadEvent` to map SDL3 gamepad buttons (`SDL_GamepadButton`) to PS2-equivalent controller state buttons.
+   - Added analog stick filtering with a ~20% deadzone (6500 / 32767) and support for user invert/swap axis settings.
+   - Mapped left and right analog triggers to `LeftShoulder2` and `RightShoulder2` pressure ranges (0–255).
+   - Added gamepad hotplug handling (`SDL_EVENT_GAMEPAD_ADDED`, `SDL_EVENT_GAMEPAD_REMOVED`) and dual-motor rumble via `SDL_RumbleGamepad` in `CPad::UpdateGamepadVibration()`.
+4. **Audio Hardware (`CAEAudioHardware` & OpenAL)**:
+   - Configured `CAEAudioHardware::Initialise()` to open OpenAL device and context (`alcOpenDevice`, `alcCreateContext`, `alcMakeContextCurrent`), set listener orientation/position, and allocate 48 audio channels under `USE_OPENAL`.
+   - Bypassed DirectSound COM calls (`DirectSoundCreate8`, `InitDirectSoundListener`, `Query3DSoundEffects`) and COM `CoInitialize` when `USE_OPENAL` is active.
+   - Cleaned up OpenAL device and context on shutdown in `CAEAudioHardware::Terminate()`.
+   - Fixed `HeapPtrArray<T>` in `OALBase.h` to use `std::vector<T*>` matching pointer operations in `OALBase.cpp` and `OALSource.cpp`.
+
+### Reason
+SDL3 and OpenAL-Soft deliver a battle-tested, portable, high-performance platform abstraction layer across Windows, Linux, and macOS, while completely preserving 100% binary compatibility with the vanilla ASI plugin target.
+
+### Alternatives Considered
+* *Maintaining Win32 & DirectSound via Wine emulation wrappers*: Keeps the standalone project bound to 32-bit Windows system calls and legacy DirectX COM interfaces.
+* *Rewriting input and audio from scratch*: High risk of regressions in GTA SA's nuanced input response, button mappings, and complex audio environment ducking.
+
+### Consequences
+The standalone native target can create windows, poll input events, rumble connected gamepads, and initialize 3D audio natively on modern host platforms without any Win32 or DirectX dependencies.
+

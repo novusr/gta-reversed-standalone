@@ -401,7 +401,7 @@ INT WINAPI NOTSA_WinMain(HINSTANCE instance, HINSTANCE hPrevInstance, LPSTR cmdL
     }
 
 #ifdef NOTSA_USE_SDL3
-    if (!SDL_Init(SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC)) {
         NOTSA_UNREACHABLE("Failed to initialize SDL: {}", SDL_GetError());
         return -1;
     }
@@ -515,7 +515,15 @@ INT WINAPI NOTSA_WinMain(HINSTANCE instance, HINSTANCE hPrevInstance, LPSTR cmdL
     AudioEngine.Shutdown();
     FreeVideoModeList();
     RsEventHandler(rsRWTERMINATE, nullptr);
+#ifdef NOTSA_USE_SDL3
+    if (PSGLOBAL(sdlWindow)) {
+        SDL_DestroyWindow(PSGLOBAL(sdlWindow));
+        PSGLOBAL(sdlWindow) = nullptr;
+    }
+    SDL_Quit();
+#else
     DestroyWindow(PSGLOBAL(window));
+#endif
     RsEventHandler(rsTERMINATE, nullptr);
     free(argv);
     ShowCursor(true);
@@ -557,11 +565,90 @@ INT WINAPI WinMain(HINSTANCE instance, HINSTANCE hPrevInstance, LPSTR cmdLine, I
 
     return 0;
 #else
+    NOTSA_LOG_INFO("Bootstrapping GTA Reversed Standalone Native runtime (SDL3 + OpenAL)...");
+
+#ifdef NOTSA_USE_SDL3
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC)) {
+        NOTSA_LOG_ERR("Failed to initialize SDL3: {}", SDL_GetError());
+        return 1;
+    }
+    notsa::ScopeGuard cleanupSDL{ [] {
+        SDL_Quit();
+    } };
+#endif
+
+    if (rsEVENTERROR == RsEventHandler(rsINITIALIZE, nullptr)) {
+        NOTSA_LOG_ERR("Failed to initialize platform subsystem");
+        return 1;
+    }
+    notsa::ScopeGuard cleanupRs{ [] {
+        RsEventHandler(rsTERMINATE, nullptr);
+    } };
+
+#ifdef NOTSA_USE_SDL3
+    const auto windowWidth  = RsGlobal.maximumWidth ? RsGlobal.maximumWidth : APP_DEFAULT_WIDTH;
+    const auto windowHeight = RsGlobal.maximumHeight ? RsGlobal.maximumHeight : APP_DEFAULT_HEIGHT;
+    SDL_Window* sdlWnd = SDL_CreateWindow(
+        RsGlobal.appName ? RsGlobal.appName : "GTA: San Andreas (Standalone)",
+        windowWidth,
+        windowHeight,
+        SDL_WINDOW_RESIZABLE
+    );
+    if (!sdlWnd) {
+        NOTSA_LOG_ERR("Failed to create SDL3 window: {}", SDL_GetError());
+        return 1;
+    }
+    PSGLOBAL(sdlWindow) = sdlWnd;
+#ifdef _WIN32
+    PSGLOBAL(window) = (HWND)(SDL_GetPointerProperty(SDL_GetWindowProperties(sdlWnd), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+#endif
+    PSGLOBAL(instance) = instance;
+
+    notsa::ScopeGuard cleanupWnd{ [&] {
+        if (PSGLOBAL(sdlWindow)) {
+            SDL_DestroyWindow(PSGLOBAL(sdlWindow));
+            PSGLOBAL(sdlWindow) = nullptr;
+        }
+    } };
+
+    SDL_SetWindowFocusable(sdlWnd, true);
+    SDL_SetWindowPosition(sdlWnd, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    SDL_ShowWindow(sdlWnd);
+    SDL_RaiseWindow(sdlWnd);
+#endif
+
+    if (!AudioEngine.Initialise()) {
+        NOTSA_LOG_WARN("AudioEngine failed to initialise; continuing without audio");
+    }
+    notsa::ScopeGuard cleanupAudio{ [] {
+        AudioEngine.Shutdown();
+    } };
+
+    ControlsManager.ReinitControls();
+
     notsa::ui::UIRenderer::CreateInstance();
-    // code..
-    notsa::ui::UIRenderer::CreateInstance();
-    NOTSA_LOG_ERR("This executable is meant to be used for dumping hooks only, see `NOTSA_STANDALONE_DUMP_HOOKS_ONLY` option");
-    return 1;
+    notsa::ScopeGuard cleanupUI{ [] {
+        notsa::ui::UIRenderer::DestroyInstance();
+    } };
+
+    NOTSA_LOG_INFO("Entering SDL3 standalone native main loop...");
+    while (!RsGlobal.quit) {
+#ifdef NOTSA_USE_SDL3
+        notsa::SDLWrapper::ProcessEvents();
+#endif
+        if (ForegroundApp) {
+            CPad::UpdatePads();
+            AudioEngine.Service();
+        }
+#ifdef NOTSA_USE_SDL3
+        SDL_Delay(10);
+#else
+        OS_ThreadSleep(10);
+#endif
+    }
+
+    NOTSA_LOG_INFO("Shutting down SDL3 standalone native runtime cleanly...");
+    return 0;
 #endif
 }
 #endif

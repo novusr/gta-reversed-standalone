@@ -8,6 +8,19 @@
 #include "AEStaticChannel.h"
 #include "AEUserRadioTrackManager.h"
 
+#ifdef USE_OPENAL
+#if defined(__APPLE__)
+#include <OpenAL/al.h>
+#include <OpenAL/alc.h>
+#else
+#include <AL/al.h>
+#include <AL/alc.h>
+#endif
+#include "OALBase.h"
+#include "OALBuffer.h"
+#include "OALSource.h"
+#endif
+
 auto& AEAudioHardware = StaticRef<CAEAudioHardware>(0xB5F8B8);
 
 void CAEAudioHardware::InjectHooks() {
@@ -85,6 +98,45 @@ bool CAEAudioHardware::Initialise() {
         return false;
     }
 
+#ifdef USE_OPENAL
+    ALCdevice* dev = alcOpenDevice(nullptr);
+    if (!dev) {
+        NOTSA_LOG_ERR("Failed to open OpenAL device!");
+        return false;
+    }
+
+    ALCcontext* ctx = alcCreateContext(dev, nullptr);
+    if (!ctx || !alcMakeContextCurrent(ctx)) {
+        NOTSA_LOG_ERR("Failed to create OpenAL context!");
+        if (ctx) {
+            alcDestroyContext(ctx);
+        }
+        alcCloseDevice(dev);
+        return false;
+    }
+
+    alListener3f(AL_POSITION, 0.0f, 0.0f, 0.0f);
+    alListener3f(AL_VELOCITY, 0.0f, 0.0f, 0.0f);
+    ALfloat orientation[] = { 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, -1.0f };
+    alListenerfv(AL_ORIENTATION, orientation);
+
+    m_nSpeakerConfig = 2; // Stereo / default
+    m_nNumChannels = 48;
+    m_nNumAvailableChannels = 48;
+    m_IsHardwareMixAvailable = false;
+    AESmoothFadeThread.m_nNumAvailableBuffers = 48;
+
+    m_pStreamingChannel = new CAEStreamingChannel(nullptr, 0);
+    m_pStreamingChannel->Initialise();
+
+    m_aChannels[0] = m_pStreamingChannel;
+    for (auto i = 1u; i < m_nNumChannels; i++) {
+        m_aChannels[i] = new CAEStaticChannel(nullptr, i, false, 44'100, 16);
+    }
+
+    m_pStreamingChannel->SetVolume(-100.0f);
+    m_awChannelFlags[0] = 55; // todo: flag
+#else
     VERIFY(SUCCEEDED(CoInitialize(nullptr)));
 
 #if 0 // No EAX
@@ -132,6 +184,7 @@ bool CAEAudioHardware::Initialise() {
 
     m_pStreamingChannel->SetVolume(-100.0f);
     m_awChannelFlags[0] = 55; // todo: flag
+#endif
 
     if (FrontEndMenuManager.m_bTracksAutoScan) {
         AEUserRadioTrackManager.ScanUserTracks();
@@ -149,7 +202,7 @@ bool CAEAudioHardware::Initialise() {
                 break;
             }
 
-            Sleep(100);
+            OS_ThreadSleep(100);
         }
     }
 
@@ -167,6 +220,9 @@ bool CAEAudioHardware::Initialise() {
 
 // 0x4D9640
 bool CAEAudioHardware::InitDirectSoundListener(uint32 numChannels, uint32 samplesPerSec, uint32 bitsPerSample) {
+#ifdef USE_OPENAL
+    return true;
+#else
     if (!m_pDSDevice)
         return false;
 
@@ -223,6 +279,7 @@ bool CAEAudioHardware::InitDirectSoundListener(uint32 numChannels, uint32 sample
     Query3DSoundEffects();
 
     return true;
+#endif
 }
 
 // 0x4D97A0
@@ -236,8 +293,21 @@ void CAEAudioHardware::Terminate() {
     }
     delete std::exchange(m_pMP3BankLoader, nullptr);
     delete std::exchange(m_pMP3TrackLoader, nullptr);
+
+#ifdef USE_OPENAL
+    ALCcontext* ctx = alcGetCurrentContext();
+    if (ctx) {
+        ALCdevice* dev = alcGetContextsDevice(ctx);
+        alcMakeContextCurrent(nullptr);
+        alcDestroyContext(ctx);
+        if (dev) {
+            alcCloseDevice(dev);
+        }
+    }
+#else
     SAFE_RELEASE(m_pDirectSound3dListener);
     SAFE_RELEASE(m_pDSDevice);
+#endif
 }
 
 void CAEAudioHardware::PlaySound(int16 channel, uint16 channelSlot, uint16 soundIdInSlot, uint16 bankSlot, int16 playPosition, int16 flags, float speed) {
@@ -753,6 +823,15 @@ void CAEAudioHardware::ResumeAllSounds() {
 
 // 0x4D8490
 void CAEAudioHardware::Query3DSoundEffects() {
+#ifdef USE_OPENAL
+    m_n3dEffectsQueryResult = 2;
+    return;
+#else
+    if (!m_pDSDevice) {
+        m_n3dEffectsQueryResult = 2;
+        return;
+    }
+
     DSBUFFERDESC bufferDesc;
     bufferDesc.guid3DAlgorithm = GUID_NULL;
     bufferDesc.lpwfxFormat = nullptr;
@@ -793,27 +872,41 @@ void CAEAudioHardware::Query3DSoundEffects() {
 
     SAFE_RELEASE(ppDS3DBuffer);
     SAFE_RELEASE(ppDSBuffer);
+#endif
 }
 
 // 0x4D9870
 void CAEAudioHardware::Service() {
-    VERIFY(SUCCEEDED(m_pDirectSound3dListener->CommitDeferredSettings()));
+#ifndef USE_OPENAL
+    if (m_pDirectSound3dListener) {
+        VERIFY(SUCCEEDED(m_pDirectSound3dListener->CommitDeferredSettings()));
+    }
+#endif
     RescaleChannelVolumes();
     if (m_n3dEffectsQueryResult) {
         UpdateReverbEnvironment();
     }
     for (const auto ch : GetChannels() | rng::views::drop(1)) {
-        ch->SynchPlayback();
+        if (ch) ch->SynchPlayback();
     }
     for (const auto ch : GetChannels() | rng::views::drop(1)) {
-        ch->Service();
+        if (ch) ch->Service();
     }
-    m_pMP3BankLoader->UpdateVirtualChannels(
-        &m_VirtualChannelSettings,
-        m_VirtualChannelSoundLengths,
-        m_VirtualChannelLoopTimes
-    );
-    m_pMP3BankLoader->Service();
+    if (m_pMP3BankLoader) {
+        m_pMP3BankLoader->UpdateVirtualChannels(
+            &m_VirtualChannelSettings,
+            m_VirtualChannelSoundLengths,
+            m_VirtualChannelLoopTimes
+        );
+        m_pMP3BankLoader->Service();
+    }
+#ifdef USE_OPENAL
+    for (auto* source : OALSource::activeSources) {
+        if (source) {
+            source->Update();
+        }
+    }
+#endif
 }
 
 const CAEBankSlot& CAEAudioHardware::GetBankSlot(eSoundBankSlot slot) const {
