@@ -16,6 +16,25 @@ if (${RE_PROJECT}_STANDALONE_NATIVE)
     set(${RE_PROJECT}_USE_SDL3 ON)
     set(${RE_PROJECT}_WITH_OPENAL ON)
     add_compile_definitions(NOTSA_STANDALONE_NATIVE)
+
+    # Configure librw
+    if (NOT LIBRW_PLATFORM)
+        if (WIN32)
+            set(LIBRW_PLATFORM "D3D9" CACHE STRING "librw platform" FORCE)
+        else()
+            set(LIBRW_PLATFORM "GL3" CACHE STRING "librw platform" FORCE)
+        endif()
+    endif()
+    if (LIBRW_PLATFORM STREQUAL "GL3")
+        set(LIBRW_GL3_GFXLIB "SDL3" CACHE STRING "librw GL3 gfxlib" FORCE)
+    endif()
+    set(LIBRW_TOOLS OFF CACHE BOOL "Build librw tools" FORCE)
+    set(LIBRW_INSTALL OFF CACHE BOOL "Install librw files" FORCE)
+    set(LIBRW_EXAMPLES OFF CACHE BOOL "Build librw examples" FORCE)
+
+    if (EXISTS "${CMAKE_SOURCE_DIR}/vendor/librw/CMakeLists.txt")
+        add_subdirectory("${CMAKE_SOURCE_DIR}/vendor/librw" "${CMAKE_BINARY_DIR}/vendor/librw")
+    endif()
 endif()
 if (${RE_PROJECT}_USE_SDL3)
     add_compile_definitions(NOTSA_USE_SDL3)
@@ -189,17 +208,39 @@ target_link_libraries(${RE_PROJECT_LIB_NAME} PRIVATE
     vorbis::vorbis
     imgui::imgui
     libjpeg-turbo::libjpeg-turbo
-    ddraw
-    Winmm
-    dxguid
-    strmiids
-    d3d9
     Boost::headers
 )
+if (WIN32)
+    target_link_libraries(${RE_PROJECT_LIB_NAME} PRIVATE
+        ddraw
+        Winmm
+        dxguid
+        strmiids
+        d3d9
+    )
+endif()
 if (${RE_PROJECT}_USE_SDL3)
     target_link_libraries(${RE_PROJECT_LIB_NAME} PRIVATE
         SDL3::SDL3
     )
+endif()
+if (${RE_PROJECT}_STANDALONE_NATIVE)
+    if (TARGET librw::librw)
+        target_link_libraries(${RE_PROJECT_LIB_NAME} PRIVATE librw::librw)
+    elseif (TARGET librw)
+        target_link_libraries(${RE_PROJECT_LIB_NAME} PRIVATE librw)
+    endif()
+    target_include_directories(${RE_PROJECT_LIB_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/vendor/librw
+    )
+    if (NOT WIN32)
+        find_package(OpenGL QUIET)
+        if (TARGET OpenGL::OpenGL)
+            target_link_libraries(${RE_PROJECT_LIB_NAME} PRIVATE OpenGL::OpenGL)
+        elseif (TARGET OpenGL::GL)
+            target_link_libraries(${RE_PROJECT_LIB_NAME} PRIVATE OpenGL::GL)
+        endif()
+    endif()
 endif()
 
 target_include_directories(${RE_PROJECT_LIB_NAME} PRIVATE
@@ -276,8 +317,17 @@ target_compile_definitions(${RE_PROJECT_LIB_NAME} PRIVATE
     NOTSA_WINDOWED_MODE # NOTE: This is a workaround for the game to run in windowed mode, and it must be enabled, otherwise shit's gonna crash
     SA_SKINNED_PEDS
 
-    USE_D3D9 # TODO
 )
+if (WIN32 AND NOT ${RE_PROJECT}_STANDALONE_NATIVE)
+    target_compile_definitions(${RE_PROJECT_LIB_NAME} PRIVATE USE_D3D9)
+endif()
+if (${RE_PROJECT}_STANDALONE_NATIVE)
+    if (LIBRW_PLATFORM STREQUAL "GL3")
+        target_compile_definitions(${RE_PROJECT_LIB_NAME} PRIVATE RW_GL3)
+    elseif (LIBRW_PLATFORM STREQUAL "D3D9")
+        target_compile_definitions(${RE_PROJECT_LIB_NAME} PRIVATE RW_D3D9 USE_D3D9)
+    endif()
+endif()
 target_compile_features(${RE_PROJECT_LIB_NAME} PRIVATE cxx_std_23)
 target_precompile_headers(${RE_PROJECT_LIB_NAME} PRIVATE StdInc.cpp)
 

@@ -1,7 +1,24 @@
 #pragma once
 
 #include <Base.h>
+#ifdef _WIN32
 #include <Windows.h>
+#else
+using LPVOID = void*;
+using SIZE_T = size_t;
+using DWORD = uint32_t;
+constexpr DWORD PAGE_EXECUTE_READWRITE = 0x40;
+constexpr DWORD PAGE_EXECUTE_READ = 0x20;
+constexpr DWORD MEM_RESERVE = 0x2000;
+constexpr DWORD MEM_COMMIT = 0x1000;
+constexpr DWORD MEM_RELEASE = 0x8000;
+inline void* VirtualAlloc(void*, size_t, DWORD, DWORD) { return nullptr; }
+inline int VirtualFree(void*, size_t, DWORD) { return 0; }
+inline int VirtualProtect(void*, size_t, DWORD, DWORD*) { return 1; }
+inline unsigned long GetLastError() { return 0; }
+struct SYSTEM_INFO { DWORD dwAllocationGranularity = 4096; };
+inline void GetSystemInfo(SYSTEM_INFO* si) { if (si) si->dwAllocationGranularity = 4096; }
+#endif
 #include <extensions/utility.hpp>
 
 namespace ReversibleHooks {

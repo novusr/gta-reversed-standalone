@@ -22,15 +22,27 @@ void CCustomBuildingPipeline::InjectHooks() {
 
 // 0x5D7D90
 bool CCustomBuildingPipeline::CreatePipe() {
+#ifdef NOTSA_STANDALONE_NATIVE
+    static RxPipeline s_CustomBuildingPipeline{};
+    s_CustomBuildingPipeline.pluginId   = PLUGIN_ID;
+    s_CustomBuildingPipeline.pluginData = PLUGIN_ID;
+    ObjPipeline = &s_CustomBuildingPipeline;
+    return true;
+#else
     ObjPipeline = CreateCustomObjPipe();
     return ObjPipeline != nullptr;
+#endif
 }
 
 // 0x5D7380
 void CCustomBuildingPipeline::DestroyPipe() {
+#ifdef NOTSA_STANDALONE_NATIVE
+    ObjPipeline = nullptr;
+#else
     if (auto* const pipe = std::exchange(ObjPipeline, nullptr)) {
         RxPipelineDestroy(pipe);
     }
+#endif
 }
 
 // 0x5D7E50

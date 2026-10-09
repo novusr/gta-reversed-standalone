@@ -25,6 +25,21 @@ namespace fs = std::filesystem;
 #include <cstdlib>
 #include <algorithm>
 
+#ifndef _WIN32
+#ifndef __cdecl
+#define __cdecl
+#endif
+struct IDirect3DDevice9;
+struct IDirect3DIndexBuffer9;
+struct IDirect3DVertexDeclaration9;
+struct IDirect3DVertexShader9;
+struct IDirect3DVertexBuffer9;
+struct IDirect3DTexture9;
+struct IDirect3DBaseTexture9;
+struct IDirect3DStateBlock9;
+enum D3DPRIMITIVETYPE { D3DPT_TRIANGLELIST = 4 };
+#endif
+
 #define PLUGIN_API
 
 #define VALIDATE_SIZE(struc, size) static_assert(sizeof(struc) == size, "Invalid structure size of " #struc)

@@ -156,8 +156,16 @@ void CCustomBuildingDNPipeline::PreRenderUpdate(RpClump* clump, bool ignoreDNBal
 
 // 0x5D7100
 bool CCustomBuildingDNPipeline::CreatePipe() {
+#ifdef NOTSA_STANDALONE_NATIVE
+    static RxPipeline s_CustomBuildingDNPipeline{};
+    s_CustomBuildingDNPipeline.pluginId   = CUSTOM_BUILDING_DN_PIPELINE_ID;
+    s_CustomBuildingDNPipeline.pluginData = CUSTOM_BUILDING_DN_PIPELINE_ID;
+    ObjPipeline = &s_CustomBuildingDNPipeline;
+    return true;
+#else
     ObjPipeline = CreateCustomObjPipe();
     return ObjPipeline != nullptr;
+#endif
 }
 
 // 0x5D6750
@@ -192,9 +200,13 @@ RxPipeline* CCustomBuildingDNPipeline::CreateCustomObjPipe() {
 
 // 0x5D5FA0
 void CCustomBuildingDNPipeline::DestroyPipe() {
+#ifdef NOTSA_STANDALONE_NATIVE
+    ObjPipeline = nullptr;
+#else
     if (ObjPipeline) {
         RxPipelineDestroy(std::exchange(ObjPipeline, nullptr));
     }
+#endif
 }
 
 // 0x5D63E0

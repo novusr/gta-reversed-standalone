@@ -1666,7 +1666,7 @@ struct RwRaster
     ((_raster)->parent)
 
 
-#if !(defined(RWDEBUG) || defined(RWSUPPRESSINLINE))
+#if !(defined(RWDEBUG) || defined(RWSUPPRESSINLINE) || defined(NOTSA_STANDALONE_NATIVE))
 
 #define RwRasterGetWidth(_raster)                   \
     RwRasterGetWidthMacro(_raster)
@@ -1689,7 +1689,7 @@ struct RwRaster
 #define RwRasterGetParent(_raster)                  \
     RwRasterGetParentMacro(_raster)
 
-#endif /* (defined(RWDEBUG) || defined(RWSUPPRESSINLINE)) */
+#endif /* !(defined(RWDEBUG) || defined(RWSUPPRESSINLINE) || defined(NOTSA_STANDALONE_NATIVE)) */
 
 
 /****************************************************************************
@@ -1710,7 +1710,7 @@ extern RwBool       RwRasterDestroy(RwRaster * raster);
 
 /* Pulling info out of raster structure */
 
-#if (defined(RWDEBUG) || defined(RWSUPPRESSINLINE))
+#if (defined(RWDEBUG) || defined(RWSUPPRESSINLINE) || defined(NOTSA_STANDALONE_NATIVE))
 extern RwInt32      RwRasterGetWidth(const RwRaster *raster);
 extern RwInt32      RwRasterGetHeight(const RwRaster *raster);
 extern RwInt32      RwRasterGetStride(const RwRaster *raster);
@@ -1718,7 +1718,7 @@ extern RwInt32      RwRasterGetDepth(const RwRaster *raster);
 extern RwInt32      RwRasterGetFormat(const RwRaster *raster);
 extern RwInt32      RwRasterGetType(const RwRaster *raster);
 extern RwRaster    *RwRasterGetParent(const RwRaster *raster);
-#endif /* (defined(RWDEBUG) || defined(RWSUPPRESSINLINE)) */
+#endif /* (defined(RWDEBUG) || defined(RWSUPPRESSINLINE) || defined(NOTSA_STANDALONE_NATIVE)) */
 
 extern RwRaster    *RwRasterGetOffset(RwRaster *raster, 
                                       RwInt16 *xOffset, RwInt16 *yOffset);

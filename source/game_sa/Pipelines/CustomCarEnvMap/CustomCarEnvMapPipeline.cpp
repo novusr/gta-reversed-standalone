@@ -98,6 +98,15 @@ bool IsEnvironmentMappingSupported() {
 
 // 0x5DA020
 bool CCustomCarEnvMapPipeline::CreatePipe() {
+#ifdef NOTSA_STANDALONE_NATIVE
+    static RxPipeline s_CustomCarEnvMapPipeline{};
+    ObjPipeline = &s_CustomCarEnvMapPipeline;
+    std::memset(&g_GameLight, 0, sizeof(g_GameLight));
+    m_gEnvMapPipeMatDataPool = new CustomEnvMapPipeMaterialDataPool(4096, "CustomEnvMapPipeMatDataPool");
+    m_gEnvMapPipeAtmDataPool = new CustomEnvMapPipeAtomicDataPool(1024, "CustomEnvMapPipeAtmDataPool");
+    m_gSpecMapPipeMatDataPool = new CustomSpecMapPipeMaterialDataPool(4096, "CustomSpecMapPipeMaterialDataPool");
+    return true;
+#else
     ObjPipeline = CreateCustomObjPipe();
     if (!ObjPipeline || !IsEnvironmentMappingSupported()) {
         return false;
@@ -107,6 +116,7 @@ bool CCustomCarEnvMapPipeline::CreatePipe() {
     m_gEnvMapPipeAtmDataPool = new CustomEnvMapPipeAtomicDataPool(1024, "CustomEnvMapPipeAtmDataPool");
     m_gSpecMapPipeMatDataPool = new CustomSpecMapPipeMaterialDataPool(4096, "CustomSpecMapPipeMaterialDataPool");
     return true;
+#endif
 }
 
 // 0x5DA130
@@ -115,9 +125,13 @@ void CCustomCarEnvMapPipeline::DestroyPipe() {
     delete std::exchange(m_gEnvMapPipeAtmDataPool, nullptr);
     delete std::exchange(m_gSpecMapPipeMatDataPool, nullptr);
 
+#ifdef NOTSA_STANDALONE_NATIVE
+    ObjPipeline = nullptr;
+#else
     if (auto* const pipe = std::exchange(ObjPipeline, nullptr)) {
         RxPipelineDestroy(pipe);
     }
+#endif
 }
 
 // 0x5D8870

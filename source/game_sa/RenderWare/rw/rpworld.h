@@ -37,6 +37,10 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
+#ifdef NOTSA_STANDALONE_NATIVE
+#include "RenderWare/RwBridge.h"
+#endif
+
 /*****************************************************************************
  Global Defines & Enums
  */
@@ -1673,8 +1677,13 @@ struct RpClumpChunkInfo
 #define RpAtomicRenderMacro(_atomic)                                    \
     ((_atomic)->renderCallBack(_atomic))
 
+#ifdef NOTSA_STANDALONE_NATIVE
+#define RpAtomicGetGeometryMacro(_atomic)                               \
+    (notsa::rwbridge::FromRw(notsa::rwbridge::ToRw(_atomic)->geometry))
+#else
 #define RpAtomicGetGeometryMacro(_atomic)                               \
     ((_atomic)->geometry)
+#endif
 
 #if (!defined(RpAtomicSetRenderCallBackMacro))
 
@@ -1759,8 +1768,13 @@ MACRO_STOP
          (0)),                                                          \
      (_intrp))
 
+#ifdef NOTSA_STANDALONE_NATIVE
+#define RpAtomicGetClumpMacro(_atomic)                                  \
+    (notsa::rwbridge::FromRw(notsa::rwbridge::ToRw(_atomic)->clump))
+#else
 #define RpAtomicGetClumpMacro(_atomic)                                  \
     ((_atomic)->clump)
+#endif
 
 /* NB "RpAtomicGetBoundingSphere(atomic++)" will break it */
 #define RpAtomicGetBoundingSphereMacro(_atomic)                         \

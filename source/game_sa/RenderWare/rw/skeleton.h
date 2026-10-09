@@ -24,7 +24,14 @@
  *
  */
 #include "rwcore.h"
+#ifdef _WIN32
 #include <Windows.h>
+#else
+typedef void* HWND;
+typedef void* HINSTANCE;
+typedef void* LPDIRECTINPUT8;
+typedef void* LPDIRECTINPUTDEVICE8;
+#endif
 
 /* Default arena size depending on platform. */
 
